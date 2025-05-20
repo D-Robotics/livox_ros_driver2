@@ -55,10 +55,10 @@ fi
 pushd `pwd` > /dev/null
 if [ $ROS_VERSION = ${VERSION_ROS1} ]; then
     cd ../../
-    catkin_make -DROS_EDITION=${VERSION_ROS1}
+    catkin_make -DROS_EDITION=${VERSION_ROS1} -DCMAKE_BUILD_TYPE=Release
 elif [ $ROS_VERSION = ${VERSION_ROS2} ]; then
     cd ../../
-    colcon build --cmake-args -DROS_EDITION=${VERSION_ROS2} -DHUMBLE_ROS=${ROS_HUMBLE}
+    colcon build --cmake-args -DROS_EDITION=${VERSION_ROS2} -DHUMBLE_ROS=${ROS_HUMBLE} -DCMAKE_BUILD_TYPE=Release
 fi
 popd > /dev/null
 

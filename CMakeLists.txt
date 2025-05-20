@@ -1,4 +1,9 @@
-# judge which cmake codes to use 
+# judge which cmake codes to use
+#set(ROS_EDITION "ROS1")
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops ")
+set(CMAKE_BUILD_TYPE "Release")
+
 if(ROS_EDITION STREQUAL "ROS1")
 
   # Copyright(c) 2019 livoxtech limited.
@@ -91,7 +96,7 @@ if(ROS_EDITION STREQUAL "ROS1")
   set(CMAKE_CXX_EXTENSIONS OFF)
 
   ## make sure the livox_lidar_sdk_static library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_static.a    /usr/local/lib)
+  find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_shared.so    /usr/local/lib)
 
   ## PCL library
   link_directories(${PCL_LIBRARY_DIRS})
@@ -184,7 +189,7 @@ if(ROS_EDITION STREQUAL "ROS1")
   #---------------------------------------------------------------------------------------
 
 
-else(ROS_EDITION STREQUAL "ROS2")
+elseif(ROS_EDITION STREQUAL "ROS2")
 
   # Copyright(c) 2020 livoxtech limited.
 
@@ -316,6 +321,12 @@ else(ROS_EDITION STREQUAL "ROS2")
     PLUGIN "livox_ros::DriverNode"
     EXECUTABLE ${PROJECT_NAME}_node
   )
+  
+  ament_auto_add_executable(data_collection_node
+    src/data_collection.cpp
+  )
+  ament_target_dependencies(data_collection_node rclcpp sensor_msgs)
+   
 
   if(BUILD_TESTING)
     find_package(ament_lint_auto REQUIRED)
@@ -333,4 +344,97 @@ else(ROS_EDITION STREQUAL "ROS2")
     launch_ROS2
   )
 
+else()
+  cmake_minimum_required(VERSION 3.0)
+  #---------------------------------------------------------------------------------------
+  # Start livox_ros_driver2 project
+  #---------------------------------------------------------------------------------------
+  SET(CMAKE_C_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
+  SET(CMAKE_CXX_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
+  include(cmake/version.cmake)
+  project(livox_ros_driver2 VERSION ${LIVOX_ROS_DRIVER2_VERSION} LANGUAGES CXX)
+  message(STATUS "livox_ros_driver2 version: ${LIVOX_ROS_DRIVER2_VERSION}")
+  #---------------------------------------------------------------------------------------
+  # find package and the dependecy
+  #---------------------------------------------------------------------------------------
+#  find_package(Boost 1.54 REQUIRED COMPONENTS
+#          system
+#          thread
+#          chrono)
+  set(CMAKE_PREFIX_PATH ${PROJECT_SOURCE_DIR}/3rdparty/protobuf/)
+  find_package(
+          Protobuf REQUIRED
+  )
+  message("protobuf_LIBRARIES: ${Protobuf_LIBRARIES}")
+
+  #---------------------------------------------------------------------------------------
+  # Set default build to release
+  #---------------------------------------------------------------------------------------
+  if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
+  endif()
+  #---------------------------------------------------------------------------------------
+  # Compiler config
+  #---------------------------------------------------------------------------------------
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+  set(CMAKE_CXX_EXTENSIONS OFF)
+  ## make sure the livox_lidar_sdk_static library is installed
+  find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_shared.so
+          ${PROJECT_SOURCE_DIR}/lib/)
+  include_directories(
+          src/
+  )
+  #---------------------------------------------------------------------------------------
+  # generate excutable and add libraries
+  #---------------------------------------------------------------------------------------
+  add_executable(${PROJECT_NAME}_node
+          "")
+  #---------------------------------------------------------------------------------------
+  # source file
+  #---------------------------------------------------------------------------------------
+  target_sources(${PROJECT_NAME}_node
+          PRIVATE
+          src/driver_node.cpp
+          src/lds.cpp
+          src/lds_lidar.cpp
+          src/lddc.cpp
+          src/livox_ros_driver2.cpp
+
+          src/comm/comm.cpp
+          src/comm/ldq.cpp
+          src/comm/semaphore.cpp
+          src/comm/lidar_imu_data_queue.cpp
+          src/comm/cache_index.cpp
+          src/comm/pub_handler.cpp
+
+          src/parse_cfg_file/parse_cfg_file.cpp
+          src/parse_cfg_file/parse_livox_lidar_cfg.cpp
+
+          src/call_back/lidar_common_callback.cpp
+          src/call_back/livox_lidar_callback.cpp
+
+          src/points_proto/points.pb.cc
+          )
+
+  target_include_directories(${PROJECT_NAME}_node
+          PUBLIC
+          3rdparty
+          3rdparty/protobuf/include/
+          src
+          src/include
+          )
+
+  #---------------------------------------------------------------------------------------
+  # link libraries
+  #---------------------------------------------------------------------------------------
+  link_directories(
+          ${PROJECT_SOURCE_DIR}/3rdparty/protobuf/lib/
+  )
+  target_link_libraries(${PROJECT_NAME}_node
+          ${LIVOX_LIDAR_SDK_LIBRARY}
+          pthread
+          #libz.a
+          ${Protobuf_LIBRARIES}
+          )
 endif()

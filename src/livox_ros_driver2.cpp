@@ -57,8 +57,11 @@ int main(int argc, char **argv) {
   double publish_freq  = 10.0; /* Hz */
   int output_type      = kOutputToRos;
   std::string frame_id = "livox_frame";
-  bool lidar_bag = true;
+  bool lidar_bag = false;
   bool imu_bag   = false;
+  std::string log_level = "warn";
+  const char *log_env;
+  ros::console::levels::Level ros_log_level;
 
   livox_node.GetNode().getParam("xfer_format", xfer_format);
   livox_node.GetNode().getParam("multi_topic", multi_topic);
@@ -68,8 +71,22 @@ int main(int argc, char **argv) {
   livox_node.GetNode().getParam("frame_id", frame_id);
   livox_node.GetNode().getParam("enable_lidar_bag", lidar_bag);
   livox_node.GetNode().getParam("enable_imu_bag", imu_bag);
-
   printf("data source:%u.\n", data_src);
+
+  log_env = getenv("LIDAR_LOG_LEVEL");
+  if (log_env != nullptr) log_level = log_env;
+  if (log_level == "debug") {
+    ros_log_level = ros::console::levels::Level::Debug;
+  } else if (log_level == "info") {
+    ros_log_level = ros::console::levels::Level::Info;
+  } else if (log_level == "warn") {
+    ros_log_level = ros::console::levels::Level::Warn;
+  } else if (log_level == "error") {
+    ros_log_level = ros::console::levels::Level::Error;
+  } else if (log_level == "fatal") {
+    ros_log_level = ros::console::levels::Level::Fatal;
+  }
+  ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros_log_level);
 
   if (publish_freq > 100.0) {
     publish_freq = 100.0;
@@ -107,7 +124,7 @@ int main(int argc, char **argv) {
 
   livox_node.pointclouddata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::PointCloudDataPollThread, &livox_node);
   livox_node.imudata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::ImuDataPollThread, &livox_node);
-  while (ros::ok()) { usleep(10000); }
+  while (ros::ok()) { usleep(200000); }
 
   return 0;
 }
@@ -189,6 +206,82 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(livox_ros::DriverNode)
+
+
+#else //  NO ROS1 or ROS2
+
+std::atomic_bool is_exit{false};
+
+void sighandler(int signum) {
+  printf("\nCaught signal %d, coming out...\n", signum);
+  is_exit = true;
+}
+
+int main(int argc, char **argv) {
+  livox_ros::DriverNode livox_node;
+  /** Init default system parameter */
+  int xfer_format = kPointCloud2Msg;
+  int multi_topic = 0;
+  int data_src = kSourceRawLidar;
+  double publish_freq  = 10.0; /* Hz */
+  int output_type      = kOutputToRos;
+  std::string frame_id = "livox_frame";
+  bool lidar_bag = false;
+  bool imu_bag   = false;
+  std::string log_level = "warn";
+  const char *log_env;
+
+  printf("data source:%u.\n", data_src);
+
+  signal(SIGINT, sighandler);
+
+  if (publish_freq > 100.0) {
+    publish_freq = 100.0;
+  } else if (publish_freq < 0.5) {
+    publish_freq = 0.5;
+  } else {
+    publish_freq = publish_freq;
+  }
+
+  livox_node.future_ = livox_node.exit_signal_.get_future();
+
+  /** Lidar data distribute control and lidar data source set */
+  #ifdef BUILDING_ROS1
+  livox_node.lddc_ptr_ = std::make_unique<Lddc>(xfer_format, multi_topic, data_src, output_type,
+                        publish_freq, frame_id, lidar_bag, imu_bag);
+  #else
+    livox_node.lddc_ptr_ = std::make_unique<Lddc>(xfer_format, multi_topic, data_src, output_type,
+                        publish_freq, frame_id);
+  #endif
+  livox_node.lddc_ptr_->SetRosNode(&livox_node);
+
+  if (data_src == kSourceRawLidar) {
+    //DRIVER_INFO(livox_node, "Data Source is raw lidar.");
+
+    std::string user_config_path = "./config/MID360_config.json";
+    //livox_node.getParam("user_config_path", user_config_path);
+    //DRIVER_INFO(livox_node, "Config file : %s", user_config_path.c_str());
+
+    LdsLidar *read_lidar = LdsLidar::GetInstance(publish_freq);
+    livox_node.lddc_ptr_->RegisterLds(static_cast<Lds *>(read_lidar));
+
+    if ((read_lidar->InitLdsLidar(user_config_path))) {
+      //DRIVER_INFO(livox_node, "Init lds lidar successfully!");
+    } else {
+      //DRIVER_ERROR(livox_node, "Init lds lidar failed!");
+    }
+  } else {
+    //DRIVER_ERROR(livox_node, "Invalid data src (%d), please check the launch file", data_src);
+  }
+
+  livox_node.pointclouddata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::PointCloudDataPollThread, &livox_node);
+  livox_node.imudata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::ImuDataPollThread, &livox_node);
+  while (!is_exit) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    //  usleep(200000);
+  }
+  return 0;
+}
 
 #endif  // defined BUILDING_ROS2
 

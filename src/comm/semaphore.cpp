@@ -27,7 +27,7 @@
 namespace livox_ros {
 
 void Semaphore::Signal() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   ++count_;
   cv_.notify_one();
 }

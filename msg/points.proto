@@ -1,0 +1,14 @@
+syntax="proto3";
+package PointCloudProto;
+
+message Point {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  uint32 offset_time = 4;
+}
+
+message PointCloud {
+  uint64 timestamp = 1;
+  repeated Point points = 2;
+}

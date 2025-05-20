@@ -1,0 +1,13 @@
+prefix=/home/hobot/mid360/zlib-1.2.13/build_x5/install
+exec_prefix=/home/hobot/mid360/zlib-1.2.13/build_x5/install
+libdir=/home/hobot/mid360/zlib-1.2.13/build_x5/install/lib
+sharedlibdir=/home/hobot/mid360/zlib-1.2.13/build_x5/install/lib
+includedir=/home/hobot/mid360/zlib-1.2.13/build_x5/install/include
+
+Name: zlib
+Description: zlib compression library
+Version: 1.2.13
+
+Requires:
+Libs: -L${libdir} -L${sharedlibdir} -lz
+Cflags: -I${includedir}

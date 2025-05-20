@@ -3,7 +3,7 @@
 	<!--user configure parameters for ros start-->
 	<arg name="lvx_file_path" default="livox_test.lvx"/>
 	<arg name="bd_list" default="100000000000000"/>
-	<arg name="xfer_format" default="1"/>
+	<arg name="xfer_format" default="0"/>
 	<arg name="multi_topic" default="0"/>
 	<arg name="data_src" default="0"/>
 	<arg name="publish_freq" default="10.0"/>
@@ -12,9 +12,9 @@
 	<arg name="rosbag_enable" default="false"/>
 	<arg name="cmdline_arg" default="$(arg bd_list)"/>
 	<arg name="msg_frame_id" default="livox_frame"/>
-	<arg name="lidar_bag" default="true"/>
-	<arg name="imu_bag" default="true"/>
-	<!--user configure parameters for ros end--> 
+	<arg name="lidar_bag" default="false"/>
+	<arg name="imu_bag" default="false"/>
+	<!--user configure parameters for ros end-->
 
 	<param name="xfer_format" value="$(arg xfer_format)"/>
 	<param name="multi_topic" value="$(arg multi_topic)"/>
@@ -34,7 +34,7 @@
 
 	<group if="$(arg rosbag_enable)">
     	<node pkg="rosbag" type="record" name="record" output="screen"
-          		args="-a"/>
+          		args="-o /home/hobot/data_saved/lidar_data/  -a --bz2 --buffsize=2048"/>
     </group>
 
 </launch>

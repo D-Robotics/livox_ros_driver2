@@ -97,17 +97,12 @@ void PubHandler::SetPointCloudsCallback(PointCloudsCallback cb, void* client_dat
 
 void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t dev_type,
                                                 LivoxLidarEthernetPacket *data, void *client_data) {
+  static std::atomic_uint32_t info_cnt{0};
   PubHandler* self = (PubHandler*)client_data;
   if (!self) {
     return;
   }
-
-  if (data->time_type != kTimestampTypeNoSync) {
-    is_timestamp_sync_.store(true);
-  } else {
-    is_timestamp_sync_.store(false);
-  }
-
+  is_timestamp_sync_ = data->time_type != kTimestampTypeNoSync;
   if (data->data_type == kLivoxLidarImuData) {
     if (self->imu_callback_) {
       RawImuPoint* imu = (RawImuPoint*) data->data;
@@ -122,7 +117,7 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
       imu_data.acc_x = imu->acc_x;
       imu_data.acc_y = imu->acc_y;
       imu_data.acc_z = imu->acc_z;
-      self->imu_callback_(&imu_data, self->imu_client_data_);
+      if (is_timestamp_sync_) self->imu_callback_(&imu_data, self->imu_client_data_);
     }
     return;
   }
@@ -220,7 +215,7 @@ void PubHandler::CheckTimer(uint32_t id) {
       lidar_point.points = points_[handle].data();
       frame_.lidar_num++;
     }
-    PublishPointCloud();
+   // PublishPointCloud();
     frame_.lidar_num = 0;
   }
   return;

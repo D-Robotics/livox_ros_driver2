@@ -1,0 +1,11 @@
+prefix=/home/hobot/mid360/protobuf-cpp-3.21.12/build_x5/install
+exec_prefix=/home/hobot/mid360/protobuf-cpp-3.21.12/build_x5/install
+libdir=/home/hobot/mid360/protobuf-cpp-3.21.12/build_x5/install/lib
+includedir=/home/hobot/mid360/protobuf-cpp-3.21.12/build_x5/install/include
+
+Name: Protocol Buffers
+Description: Google's Data Interchange Format
+Version: 3.21.12.0
+Libs: -L${libdir} -lprotobuf 
+Cflags: -I${includedir}
+Conflicts: protobuf-lite

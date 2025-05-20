@@ -36,6 +36,7 @@ namespace livox_ros {
 typedef enum {
   kOutputToRos = 0,
   kOutputToRosBagFile = 1,
+  kOutputToRosAll = 2,
 } DestinationOfMessageOutput;
 
 /** The message type of transfer */
@@ -55,6 +56,7 @@ using PointField = sensor_msgs::PointField;
 using CustomMsg = livox_ros_driver2::CustomMsg;
 using CustomPoint = livox_ros_driver2::CustomPoint;
 using ImuMsg = sensor_msgs::Imu;
+using PointCloud = pcl::PointCloud<pcl::PointXYZI>;
 #elif defined BUILDING_ROS2
 template <typename MessageT> using Publisher = rclcpp::Publisher<MessageT>;
 using PublisherPtr = std::shared_ptr<rclcpp::PublisherBase>;
@@ -63,9 +65,13 @@ using PointField = sensor_msgs::msg::PointField;
 using CustomMsg = livox_ros_driver2::msg::CustomMsg;
 using CustomPoint = livox_ros_driver2::msg::CustomPoint;
 using ImuMsg = sensor_msgs::msg::Imu;
+using PointCloud = pcl::PointCloud<pcl::PointXYZI>;
+
+#else //  NO ROS1 or ROS2
+
+
 #endif
 
-using PointCloud = pcl::PointCloud<pcl::PointXYZI>;
 
 class DriverNode;
 
@@ -74,7 +80,7 @@ class Lddc final {
 #ifdef BUILDING_ROS1
   Lddc(int format, int multi_topic, int data_src, int output_type, double frq,
       std::string &frame_id, bool lidar_bag, bool imu_bag);
-#elif defined BUILDING_ROS2
+#else
   Lddc(int format, int multi_topic, int data_src, int output_type, double frq,
       std::string &frame_id);
 #endif
@@ -99,12 +105,13 @@ class Lddc final {
  private:
   void PollingLidarPointCloudData(uint8_t index, LidarDevice *lidar);
   void PollingLidarImuData(uint8_t index, LidarDevice *lidar);
+  void PublishImuData(LidarImuDataQueue& imu_data_queue, const uint8_t index);
 
+#if defined BUILDING_ROS1 || defined BUILDING_ROS2
   void PublishPointcloud2(LidarDataQueue *queue, uint8_t index);
   void PublishCustomPointcloud(LidarDataQueue *queue, uint8_t index);
   void PublishPclMsg(LidarDataQueue *queue, uint8_t index);
 
-  void PublishImuData(LidarImuDataQueue& imu_data_queue, const uint8_t index);
 
   void InitPointcloud2MsgHeader(PointCloud2& cloud);
   void InitPointcloud2Msg(const StoragePacket& pkg, PointCloud2& cloud, uint64_t& timestamp);
@@ -131,7 +138,15 @@ class Lddc final {
   PublisherPtr GetCurrentPublisher(uint8_t index);
   PublisherPtr GetCurrentImuPublisher(uint8_t index);
 
+#else
+void SavePointCloud(LidarDataQueue *queue, uint8_t index);
+void SaveImuData(const ImuData& imu_data, uint64_t& timestamp);
+#endif
+
  private:
+  std::string directory_;
+  std::ofstream imu_file_;
+
   uint8_t transfer_format_;
   uint8_t use_multi_topic_;
   uint8_t data_src_;
