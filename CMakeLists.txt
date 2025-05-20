@@ -1,11 +1,10 @@
 # judge which cmake codes to use
 #set(ROS_EDITION "ROS1")
 
-
 set(ROS_EDITION "ROS2")
 set(HUMBLE_ROS "humble")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops ")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 set(CMAKE_BUILD_TYPE "Release")
 
 execute_process(
@@ -408,7 +407,6 @@ else()
   set(CMAKE_CXX_STANDARD 17)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_EXTENSIONS OFF)
-
   include_directories(
           src/
   )
