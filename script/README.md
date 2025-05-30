@@ -18,3 +18,7 @@
 - `stereo_imu_to_ros1_bag.py` : ros1环境下，将解析的imu数据txt文件和双目png图像还原为ros1bag文件，注意这里的重力加速度常数！！！
 - 得到ros1bag数据后，可以用kalibr功能包对双目相机+IMU进行联合标定
 
+## 激光雷达投影到图像
+
+- `ros2_parse_stereo_lidar_imu.py` : ros2环境下，将imu数据解析为txt文件，将双目图像解析为png图像，png图像的文件名为图像的时间戳，将雷达数据解析为PCD文件，PCD文件名为点云的时间戳
+
