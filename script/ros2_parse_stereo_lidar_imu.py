@@ -105,7 +105,7 @@ def process_ros2_bag(bag_path, output_dir):
 
         elif msg_type == 'sensor_msgs/msg/PointCloud2':
             msg = deserialize_message(data, PointCloud2)
-            pts = parse_pointcloud2_xyz_intensity(msg)
+            pts = parse_pointcloud2_xyz_intensity_offsettime(msg)
             timestamp_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
             filename = os.path.join(lidar_dir, f"{timestamp_ns}.pcd")
             save_pcd_ascii(filename, pts)
