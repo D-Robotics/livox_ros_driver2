@@ -23,6 +23,7 @@ imu_topic = '/livox/imu'
 lidar_topic = '/livox/lidar'
 image_topic = '/image_combine_raw'
 snap_shot_mode = False
+gravity = 9.81
 ################### user configure parameters for ros2 end #####################
 
 livox_ros2_params = [
@@ -42,7 +43,8 @@ dc_ros2_params = [
     {"lidar_topic": lidar_topic},
     {"image_topic": image_topic},
     {"home_dir": home_dir},
-    {"snap_shot": snap_shot_mode}
+    {"snap_shot": snap_shot_mode},
+    {"gravity": gravity},
 ]
 
 def generate_launch_description():

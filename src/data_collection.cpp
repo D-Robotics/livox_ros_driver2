@@ -109,6 +109,7 @@ class ROS2DataCollection : public rclcpp::Node {
     std::string image_topic = this->declare_parameter("image_topic", "/image_combine_raw");;
     int save_thread_num = this->declare_parameter("save_thread_num", 2);;
     snap_shot_ = this->declare_parameter("snap_shot", false);
+    gravity_ = this->declare_parameter("gravity", gravity_);
 
     // 生成当前时间文件夹
     data_dir_ = home_dir + generateTimestampFolder();
@@ -122,8 +123,10 @@ class ROS2DataCollection : public rclcpp::Node {
 
     RCLCPP_INFO(this->get_logger(),
                 "data_dir: %s\n"
-                "imu_topic: %s, lidar_topic:%s, image_topic: %s",
-                data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str());
+                "imu_topic: %s, lidar_topic:%s, image_topic: %s\n"
+                "snap_shot: %d, gravity_: %f",
+                data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
+                snap_shot_, gravity_);
 
     // 创建 IMU 数据文件
     imu_filename_ = imu_dir_ + "/imu_data.txt";
