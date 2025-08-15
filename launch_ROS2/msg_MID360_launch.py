@@ -22,6 +22,7 @@ home_dir = '/media/sda2/'
 imu_topic = '/livox/imu'
 lidar_topic = '/livox/lidar'
 image_topic = '/image_combine_raw'
+snap_shot_mode = False
 ################### user configure parameters for ros2 end #####################
 
 livox_ros2_params = [
@@ -40,7 +41,8 @@ dc_ros2_params = [
     {"imu_topic": imu_topic},
     {"lidar_topic": lidar_topic},
     {"image_topic": image_topic},
-    {"home_dir": home_dir}
+    {"home_dir": home_dir},
+    {"snap_shot": snap_shot_mode}
 ]
 
 def generate_launch_description():

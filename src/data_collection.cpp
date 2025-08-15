@@ -11,6 +11,21 @@
 #include <sstream>
 #include <deque>
 
+#include <sys/ioctl.h>
+#include <termios.h>
+
+static bool kbhit() {
+  termios term;
+  tcgetattr(0, &term);
+  termios term2 = term;
+  term2.c_lflag &= ~ICANON;
+  tcsetattr(0, TCSANOW, &term2);
+  int byteswaiting;
+  ioctl(0, FIONREAD, &byteswaiting);
+  tcsetattr(0, TCSANOW, &term);
+  return byteswaiting > 0;
+}
+
 template<class T>
 struct blockqueue {
   int put(T &&t) {
@@ -22,6 +37,23 @@ struct blockqueue {
     }
   }
   int put(T &t) {
+    {
+      std::lock_guard<std::mutex>lck (mtx);
+      que.push_back(t);
+      cv.notify_one();
+      return que.size();
+    }
+  }
+
+  int put_front(T &&t) {
+    {
+      std::lock_guard<std::mutex>lck (mtx);
+      que.emplace_back(t);
+      cv.notify_one();
+      return que.size();
+    }
+  }
+  int put_front(T &t) {
     {
       std::lock_guard<std::mutex>lck (mtx);
       que.push_back(t);
@@ -44,6 +76,11 @@ struct blockqueue {
       }
       return false;
     }
+  }
+
+  void pop_front() {
+    std::lock_guard<std::mutex>lck (mtx);
+    que.pop_front();
   }
 
   void clear() {
@@ -71,8 +108,9 @@ class ROS2DataCollection : public rclcpp::Node {
     std::string lidar_topic = this->declare_parameter("lidar_topic", "/livox/lidar");;
     std::string image_topic = this->declare_parameter("image_topic", "/image_combine_raw");;
     int save_thread_num = this->declare_parameter("save_thread_num", 2);;
+    snap_shot_ = this->declare_parameter("snap_shot", false);
 
-    // Éú³Éµ±Ç°Ê±¼äÎÄ¼þ¼Ð
+    // ç”Ÿæˆå½“å‰æ—¶é—´æ–‡ä»¶å¤¹
     data_dir_ = home_dir + generateTimestampFolder();
     image_dir_ = data_dir_ + "/image/";
     pcd_dir_ = data_dir_ + "/pcd/";
@@ -87,9 +125,9 @@ class ROS2DataCollection : public rclcpp::Node {
                 "imu_topic: %s, lidar_topic:%s, image_topic: %s",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str());
 
-    // ´´½¨ IMU Êý¾ÝÎÄ¼þ
+    // åˆ›å»º IMU æ•°æ®æ–‡ä»¶
     imu_filename_ = imu_dir_ + "/imu_data.txt";
-    imu_file_.open(imu_filename_, std::ios::out | std::ios::app);  // ×·¼ÓÄ£Ê½
+    imu_file_.open(imu_filename_, std::ios::out | std::ios::app);  // è¿½åŠ æ¨¡å¼
     if (!imu_file_.is_open()) {
       RCLCPP_ERROR(this->get_logger(), "Failed to open IMU file: %s", imu_filename_.c_str());
     }
@@ -99,24 +137,67 @@ class ROS2DataCollection : public rclcpp::Node {
       RCLCPP_ERROR(this->get_logger(), "Failed to open log file: %s", (data_dir_ + "/log.log").c_str());
     }
 
-    for (int i = 0; i < save_thread_num; ++i) {
-      save_threads_.emplace_back(std::make_shared<std::thread>(
-          std::bind(&ROS2DataCollection::save_pcd_thread, this)));
-      save_threads_.emplace_back(std::make_shared<std::thread>(
-          std::bind(&ROS2DataCollection::save_image_thread, this)));
+    if (!snap_shot_) {
+      for (int i = 0; i < save_thread_num; ++i) {
+        save_threads_.emplace_back(std::make_shared<std::thread>(
+            std::bind(&ROS2DataCollection::save_pcd_thread, this)));
+        save_threads_.emplace_back(std::make_shared<std::thread>(
+            std::bind(&ROS2DataCollection::save_image_thread, this)));
+      }
     }
 
-    // ¶©ÔÄ IMU
+    // è®¢é˜… IMU
     imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
         imu_topic, 1000, std::bind(&ROS2DataCollection::imu_callback, this, std::placeholders::_1));
 
-    // ¶©ÔÄ NV12 Í¼Ïñ
+    // è®¢é˜… NV12 å›¾åƒ
     image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
         image_topic, 30, std::bind(&ROS2DataCollection::image_callback, this, std::placeholders::_1));
 
-    // ¶©ÔÄ PointCloud2
+    // è®¢é˜… PointCloud2
     pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         lidar_topic, 30, std::bind(&ROS2DataCollection::pcd_callback, this, std::placeholders::_1));
+
+    if (snap_shot_) {
+      std::thread([this]() {
+        int64_t image_ts, pcd_ts;
+        while (rclcpp::ok()) {
+          bool saved = false;
+          sensor_msgs::msg::Image::SharedPtr img_msg = nullptr;
+          sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg = nullptr;
+          if (kbhit()) {
+            int c = getchar();
+            if (c == '\n') {
+              get_shot_time_ = this->now().seconds();
+              RCLCPP_WARN(this->get_logger(), "get snap shot at: %f.", get_shot_time_);
+              while (!saved) {
+                if (image_que_.get(img_msg)) {
+                  image_ts = img_msg->header.stamp.sec * 1e9 + img_msg->header.stamp.nanosec;
+                  while (!saved && pcd_que_.get(pcd_msg)) {
+                    pcd_ts = pcd_msg->header.stamp.sec * 1e9 + pcd_msg->header.stamp.nanosec;
+                    if (std::abs(pcd_ts - image_ts) < 1e6) {
+                      save_image(image_ts, img_msg);
+                      save_pcd(image_ts, pcd_msg);
+                      RCLCPP_WARN(this->get_logger(),
+                          "save snap shot data succeed. image ts: %f, pcd ts: %f, diff: %f",
+                          image_ts * 1e-9, pcd_ts * 1e-9, (image_ts - pcd_ts) * 1e-9);
+                      saved = true;
+                    } else if (pcd_ts > image_ts) {
+                      pcd_que_.put_front(pcd_msg);
+                      break;
+                    }
+                  }
+                } else {
+                  RCLCPP_ERROR(this->get_logger(), "failed to get image");
+                }
+              }
+            }
+          } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+        }
+      }).detach();
+    }
   }
 
   ~ROS2DataCollection() {
@@ -135,6 +216,8 @@ class ROS2DataCollection : public rclcpp::Node {
   std::ofstream imu_file_;
   std::ofstream log_file_;
   float gravity_ = 9.81;
+  bool snap_shot_;
+  double get_shot_time_;
 
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
@@ -164,7 +247,7 @@ class ROS2DataCollection : public rclcpp::Node {
               << msg->angular_velocity.x << "," << msg->angular_velocity.y << "," << msg->angular_velocity.z << ","
               << msg->linear_acceleration.x * gravity_ << "," << msg->linear_acceleration.y * gravity_ << "," << msg->linear_acceleration.z * gravity_
               << "\n";
-    imu_file_.flush();  // È·±£Êý¾Ý¼°Ê±Ð´Èë
+    imu_file_.flush();  // ç¡®ä¿æ•°æ®åŠæ—¶å†™å…¥
   }
 
   void image_callback(sensor_msgs::msg::Image::SharedPtr msg) {
@@ -191,10 +274,13 @@ class ROS2DataCollection : public rclcpp::Node {
     last_timestamp = timestamp;
     int sz = image_que_.put(msg);
     if (sz > 10) {
-      stringstream.clear();
-      stringstream << std::fixed << "[image] que is larger than 10: " << sz;
-      log_file_ << stringstream.rdbuf() << std::endl;
-      RCLCPP_ERROR_STREAM(this->get_logger(), stringstream.rdbuf());
+      if (!snap_shot_) {
+        stringstream.clear();
+        stringstream << std::fixed << "[image] que is larger than 10: " << sz;
+        log_file_ << stringstream.rdbuf() << std::endl;
+        RCLCPP_ERROR_STREAM(this->get_logger(), stringstream.rdbuf());
+      }
+      image_que_.pop_front();
     }
   }
 
@@ -222,14 +308,29 @@ class ROS2DataCollection : public rclcpp::Node {
     last_timestamp = timestamp;
     int sz = pcd_que_.put(msg);
     if (sz > 10) {
-      stringstream.clear();
-      stringstream << std::fixed << "[pcd] que is larger than 10: " << sz;
-      log_file_ << stringstream.rdbuf() << std::endl;
-      RCLCPP_ERROR_STREAM(this->get_logger(), stringstream.rdbuf());
+      if (!snap_shot_) {
+        stringstream.clear();
+        stringstream << std::fixed << "[pcd] que is larger than 10: " << sz;
+        log_file_ << stringstream.rdbuf() << std::endl;
+        RCLCPP_ERROR_STREAM(this->get_logger(), stringstream.rdbuf());
+      }
+      pcd_que_.pop_front();
     }
   }
 
-  void save_pcd(const std::string& filename, const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+  void save_image(int64_t timestamp, const sensor_msgs::msg::Image::SharedPtr msg) {
+    std::string filename = image_dir_ + "/" + std::to_string(timestamp) + ".bin";
+    std::ofstream file(filename, std::ios::out | std::ios::binary);
+    if (file.is_open()) {
+      file.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
+      file.close();
+    } else {
+      std::cout << "cannot save: " << filename << std::endl;
+    }
+  }
+
+  void save_pcd(int64_t timestamp, const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    std::string filename = pcd_dir_ + "/" + std::to_string(timestamp) + ".pcd";
     std::ofstream file(filename);
     if (!file.is_open()) return;
 
@@ -266,8 +367,7 @@ class ROS2DataCollection : public rclcpp::Node {
       sensor_msgs::msg::PointCloud2::SharedPtr msg;
       if (pcd_que_.get(msg)) {
         uint64_t timestamp = msg->header.stamp.sec * 1e9 + msg->header.stamp.nanosec;
-        std::string filename = pcd_dir_ + "/" + std::to_string(timestamp) + ".pcd";
-        save_pcd(filename, msg);
+        save_pcd(timestamp, msg);
       }
     }
   }
@@ -277,14 +377,7 @@ class ROS2DataCollection : public rclcpp::Node {
       sensor_msgs::msg::Image ::SharedPtr msg;
       if (image_que_.get(msg)) {
         uint64_t timestamp = msg->header.stamp.sec * 1e9 + msg->header.stamp.nanosec;
-        std::string filename = image_dir_ + "/" + std::to_string(timestamp) + ".bin";
-        std::ofstream file(filename, std::ios::out | std::ios::binary);
-        if (file.is_open()) {
-          file.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
-          file.close();
-        } else {
-          std::cout << "cannot save: " << filename << std::endl;
-        }
+        save_image(timestamp, msg);
       }
     }
   }
