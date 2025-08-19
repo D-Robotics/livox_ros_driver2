@@ -123,7 +123,7 @@ class ROS2DataCollection : public rclcpp::Node {
 
     RCLCPP_INFO(this->get_logger(),
                 "data_dir: %s\n"
-                "imu_topic: %s, lidar_topic:%s, image_topic: %s\n"
+                "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
                 "snap_shot: %d, gravity_: %f",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
                 snap_shot_, gravity_);
@@ -162,48 +162,59 @@ class ROS2DataCollection : public rclcpp::Node {
         lidar_topic, 30, std::bind(&ROS2DataCollection::pcd_callback, this, std::placeholders::_1));
 
     if (snap_shot_) {
-      std::thread([this]() {
+      auto snap_func = [this]() {
         int64_t image_ts, pcd_ts;
+        RCLCPP_WARN(this->get_logger(), "snap_shot start.");
         while (rclcpp::ok()) {
           bool saved = false;
           sensor_msgs::msg::Image::SharedPtr img_msg = nullptr;
           sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg = nullptr;
-          if (kbhit()) {
-            int c = getchar();
-            if (c == '\n') {
-              get_shot_time_ = this->now().seconds();
-              RCLCPP_WARN(this->get_logger(), "get snap shot at: %f.", get_shot_time_);
-              while (!saved) {
-                if (image_que_.get(img_msg)) {
-                  image_ts = img_msg->header.stamp.sec * 1e9 + img_msg->header.stamp.nanosec;
-                  while (!saved && pcd_que_.get(pcd_msg)) {
+          RCLCPP_WARN(this->get_logger(), "waiting for snap shot cmd, please enter ENTER.");
+          int c;
+          c = getchar();
+          std::cout << "user input: " << c << std::endl;
+          if (c == '\n') {
+            get_shot_time_ = this->now().seconds();
+            RCLCPP_WARN(this->get_logger(), "get snap shot at: %f.", get_shot_time_);
+            while (!saved && rclcpp::ok()) {
+              if (image_que_.get(img_msg, 300)) {
+                image_ts = img_msg->header.stamp.sec * 1e9 + img_msg->header.stamp.nanosec;
+                while (!saved && rclcpp::ok()) {
+                  if (pcd_que_.get(pcd_msg, 300)) {
                     pcd_ts = pcd_msg->header.stamp.sec * 1e9 + pcd_msg->header.stamp.nanosec;
                     if (std::abs(pcd_ts - image_ts) < 1e6) {
                       save_image(image_ts, img_msg);
                       save_pcd(image_ts, pcd_msg);
                       RCLCPP_WARN(this->get_logger(),
-                          "save snap shot data succeed. image ts: %f, pcd ts: %f, diff: %f",
-                          image_ts * 1e-9, pcd_ts * 1e-9, (image_ts - pcd_ts) * 1e-9);
+                                  "save snap shot data succeed. image ts: %f, pcd ts: %f, diff: %f",
+                                  image_ts * 1e-9, pcd_ts * 1e-9, (image_ts - pcd_ts) * 1e-9);
                       saved = true;
                     } else if (pcd_ts > image_ts) {
                       pcd_que_.put_front(pcd_msg);
                       break;
                     }
+                  } else {
+                    RCLCPP_ERROR(this->get_logger(), "failed to get pcd");
+                    break;
                   }
-                } else {
-                  RCLCPP_ERROR(this->get_logger(), "failed to get image");
                 }
+              } else {
+                RCLCPP_ERROR(this->get_logger(), "failed to get image");
+                break;
               }
             }
-          } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
           }
         }
-      }).detach();
+        RCLCPP_WARN(this->get_logger(), "snap_shot exit.");
+      };
+      save_threads_.emplace_back(std::make_shared<std::thread>(snap_func));
     }
   }
 
   ~ROS2DataCollection() {
+    for (auto &t : save_threads_) {
+      t->join();
+    }
     save_threads_.clear();
     if (imu_file_.is_open()) {
       imu_file_.close();
@@ -262,7 +273,7 @@ class ROS2DataCollection : public rclcpp::Node {
       double diff = (timestamp - last_timestamp) * 1e-9;
       if (diff < 0) {
         stringstream << std::fixed << "[image] last timestamp is: " << last_timestamp * 1e-9
-        << ", current timestamp is: " << timestamp * 1e-9 << ", diff is: " << diff << "s";
+                     << ", current timestamp is: " << timestamp * 1e-9 << ", diff is: " << diff << "s";
         log_file_ << stringstream.rdbuf() << std::endl;
         RCLCPP_ERROR_STREAM(this->get_logger(), stringstream.rdbuf());
       } else if (diff > 0.18) {
@@ -392,6 +403,7 @@ int main(int argc, char** argv) {
 
   rclcpp::executors::MultiThreadedExecutor executor(
       rclcpp::ExecutorOptions(), 3);
+
   auto node = std::make_shared<ROS2DataCollection>();
   executor.add_node(node);
   executor.spin();

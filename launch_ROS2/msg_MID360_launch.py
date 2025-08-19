@@ -65,7 +65,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         livox_driver,
-        data_collection_node
+        # data_collection_node
         # launch.actions.RegisterEventHandler(
         #     event_handler=launch.event_handlers.OnProcessExit(
         #         target_action=livox_rviz,
