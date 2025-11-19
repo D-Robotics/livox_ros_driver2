@@ -4,19 +4,18 @@
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops ")
 set(CMAKE_BUILD_TYPE "Release")
 
+## make sure the livox_lidar_sdk_static library is installed
+find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_shared.so
+        ${PROJECT_SOURCE_DIR}/3rdparty/livox_sdk/aarch64/lib/ REQUIRED)
+
 if(ROS_EDITION STREQUAL "ROS1")
-
-  # Copyright(c) 2019 livoxtech limited.
-
   cmake_minimum_required(VERSION 3.0)
-
   #---------------------------------------------------------------------------------------
   # Start livox_ros_driver2 project
   #---------------------------------------------------------------------------------------
   include(cmake/version.cmake)
   project(livox_ros_driver2 VERSION ${LIVOX_ROS_DRIVER2_VERSION} LANGUAGES CXX)
   message(STATUS "livox_ros_driver2 version: ${LIVOX_ROS_DRIVER2_VERSION}")
-
   #---------------------------------------------------------------------------------------
   # Add ROS Version MACRO
   #---------------------------------------------------------------------------------------
@@ -94,9 +93,6 @@ if(ROS_EDITION STREQUAL "ROS1")
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_EXTENSIONS OFF)
 
-  ## make sure the livox_lidar_sdk_static library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_shared.so    /usr/local/lib)
-
   ## PCL library
   link_directories(${PCL_LIBRARY_DIRS})
   add_definitions(${PCL_DEFINITIONS})
@@ -155,7 +151,7 @@ if(ROS_EDITION STREQUAL "ROS1")
     ${APR_INCLUDE_DIRS}
     3rdparty
     src
-  )
+    3rdparty/livox_sdk/aarch64/include)
 
   #---------------------------------------------------------------------------------------
   # link libraries
@@ -167,7 +163,6 @@ if(ROS_EDITION STREQUAL "ROS1")
     ${PCL_LIBRARIES}
     ${APR_LIBRARIES}
   )
-
 
   #---------------------------------------------------------------------------------------
   # Install
@@ -189,9 +184,6 @@ if(ROS_EDITION STREQUAL "ROS1")
 
 
 elseif(ROS_EDITION STREQUAL "ROS2")
-
-  # Copyright(c) 2020 livoxtech limited.
-
   cmake_minimum_required(VERSION 3.14)
   project(livox_ros_driver2)
 
@@ -250,14 +242,6 @@ elseif(ROS_EDITION STREQUAL "ROS2")
     LIBRARY_NAME ${PROJECT_NAME}
   )
 
-  ## make sure the livox_lidar_sdk_shared library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so /usr/local/lib REQUIRED)
-
-  ##
-  find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR
-    NAMES "livox_lidar_api.h" "livox_lidar_def.h"
-    REQUIRED)
-
   ## PCL library
   link_directories(${PCL_LIBRARY_DIRS})
   add_definitions(${PCL_DEFINITIONS})
@@ -306,7 +290,7 @@ elseif(ROS_EDITION STREQUAL "ROS2")
     ${LIVOX_INTERFACES_INCLUDE_DIRECTORIES}   # for custom msgs
     3rdparty
     src
-  )
+    3rdparty/livox_sdk/aarch64/include)
 
   # link libraries
   target_link_libraries(${PROJECT_NAME}
@@ -348,6 +332,9 @@ elseif(ROS_EDITION STREQUAL "ROS2")
     launch_ROS2
   )
 
+  ament_auto_package(INSTALL_TO_LIB
+          ${LIVOX_LIDAR_SDK_LIBRARY})
+
 else()
   cmake_minimum_required(VERSION 3.0)
   #---------------------------------------------------------------------------------------
@@ -383,9 +370,7 @@ else()
   set(CMAKE_CXX_STANDARD 17)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_EXTENSIONS OFF)
-  ## make sure the livox_lidar_sdk_static library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_shared.so
-          ${PROJECT_SOURCE_DIR}/lib/)
+
   include_directories(
           src/
   )
@@ -427,7 +412,7 @@ else()
           3rdparty/protobuf/include/
           src
           src/include
-          )
+          3rdparty/livox_sdk/aarch64/include)
 
   #---------------------------------------------------------------------------------------
   # link libraries
