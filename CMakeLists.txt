@@ -10,7 +10,6 @@ if(ROS_EDITION STREQUAL "ROS1")
 
   cmake_minimum_required(VERSION 3.0)
 
-
   #---------------------------------------------------------------------------------------
   # Start livox_ros_driver2 project
   #---------------------------------------------------------------------------------------
@@ -232,6 +231,7 @@ elseif(ROS_EDITION STREQUAL "ROS2")
   find_package(std_msgs REQUIRED)
   find_package(builtin_interfaces REQUIRED)
   find_package(rosidl_default_generators REQUIRED)
+  find_package(OpenCV REQUIRED)
 
   # check apr
   find_package(PkgConfig)
@@ -301,6 +301,7 @@ elseif(ROS_EDITION STREQUAL "ROS2")
   target_include_directories(${PROJECT_NAME} PUBLIC
     ${PCL_INCLUDE_DIRS}
     ${APR_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
     ${LIVOX_LIDAR_SDK_INCLUDE_DIR}
     ${LIVOX_INTERFACES_INCLUDE_DIRECTORIES}   # for custom msgs
     3rdparty
@@ -326,7 +327,10 @@ elseif(ROS_EDITION STREQUAL "ROS2")
     src/data_collection.cpp
   )
   ament_target_dependencies(data_collection_node rclcpp sensor_msgs)
-   
+  target_link_libraries(
+          data_collection_node
+          ${OpenCV_LIBRARIES}
+  )
 
   if(BUILD_TESTING)
     find_package(ament_lint_auto REQUIRED)
