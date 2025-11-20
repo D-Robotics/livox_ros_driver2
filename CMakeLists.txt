@@ -8,6 +8,19 @@ set(HUMBLE_ROS "humble")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops ")
 set(CMAKE_BUILD_TYPE "Release")
 
+execute_process(
+        COMMAND rm package.xml
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE OUT
+        ERROR_VARIABLE ERR
+)
+execute_process(
+        COMMAND rm -rf launch
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE OUT
+        ERROR_VARIABLE ERR
+)
+
 if(ROS_EDITION STREQUAL "ROS1")
   cmake_minimum_required(VERSION 3.0)
   #---------------------------------------------------------------------------------------
@@ -357,7 +370,7 @@ elseif(ROS_EDITION STREQUAL "ROS2")
 
   ament_auto_package(INSTALL_TO_SHARE
     config
-    launch_ROS2
+    launch
   )
 
 else()
