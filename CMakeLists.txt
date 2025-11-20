@@ -1,12 +1,14 @@
 # judge which cmake codes to use
 #set(ROS_EDITION "ROS1")
 
+
+set(ROS_EDITION "ROS2")
+set(HUMBLE_ROS "humble")
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops ")
 set(CMAKE_BUILD_TYPE "Release")
 
-## make sure the livox_lidar_sdk_static library is installed
-find_library(LIVOX_LIDAR_SDK_LIBRARY  liblivox_lidar_sdk_shared.so
-        ${PROJECT_SOURCE_DIR}/3rdparty/livox_sdk/aarch64/lib/ REQUIRED)
+set(LIVOX_LIDAR_SDK_LIBRARY livox_lidar_sdk_shared)
 
 if(ROS_EDITION STREQUAL "ROS1")
   cmake_minimum_required(VERSION 3.0)
@@ -20,7 +22,18 @@ if(ROS_EDITION STREQUAL "ROS1")
   # Add ROS Version MACRO
   #---------------------------------------------------------------------------------------
   add_definitions(-DBUILDING_ROS1)
-
+  execute_process(
+          COMMAND cp -f package_ROS1.xml package.xml
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          OUTPUT_VARIABLE OUT
+          ERROR_VARIABLE ERR
+  )
+  execute_process(
+          COMMAND cp -rf launch_ROS1/ launch/
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          OUTPUT_VARIABLE OUT
+          ERROR_VARIABLE ERR
+  )
   #---------------------------------------------------------------------------------------
   # find package and the dependecy
   #---------------------------------------------------------------------------------------
@@ -97,6 +110,7 @@ if(ROS_EDITION STREQUAL "ROS1")
   link_directories(${PCL_LIBRARY_DIRS})
   add_definitions(${PCL_DEFINITIONS})
 
+  link_directories(${PROJECT_SOURCE_DIR}/3rdparty/livox_sdk/aarch64/lib/)
   #---------------------------------------------------------------------------------------
   # generate excutable and add libraries
   #---------------------------------------------------------------------------------------
@@ -212,7 +226,18 @@ elseif(ROS_EDITION STREQUAL "ROS2")
   # Add ROS Version MACRO
   #---------------------------------------------------------------------------------------
   add_definitions(-DBUILDING_ROS2)
-
+  execute_process(
+          COMMAND cp -f package_ROS2.xml package.xml
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          OUTPUT_VARIABLE OUT
+          ERROR_VARIABLE ERR
+  )
+  execute_process(
+          COMMAND cp -rf launch_ROS2/ launch/
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          OUTPUT_VARIABLE OUT
+          ERROR_VARIABLE ERR
+  )
   # find dependencies
   # uncomment the following section in order to fill in
   # further dependencies manually.
@@ -245,6 +270,8 @@ elseif(ROS_EDITION STREQUAL "ROS2")
   ## PCL library
   link_directories(${PCL_LIBRARY_DIRS})
   add_definitions(${PCL_DEFINITIONS})
+
+  link_directories(${PROJECT_SOURCE_DIR}/3rdparty/livox_sdk/aarch64/lib/)
 
   # livox ros2 driver target
   ament_auto_add_library(${PROJECT_NAME} SHARED
@@ -327,13 +354,15 @@ elseif(ROS_EDITION STREQUAL "ROS2")
     ament_lint_auto_find_test_dependencies()
   endif()
 
+  message(LIVOX_LIDAR_SDK_LIBRARY: ${LIVOX_LIDAR_SDK_LIBRARY})
+
+  install(FILES ${PROJECT_SOURCE_DIR}/3rdparty/livox_sdk/aarch64/lib/liblivox_lidar_sdk_shared.so
+          DESTINATION lib)
+
   ament_auto_package(INSTALL_TO_SHARE
     config
     launch_ROS2
   )
-
-  ament_auto_package(INSTALL_TO_LIB
-          ${LIVOX_LIDAR_SDK_LIBRARY})
 
 else()
   cmake_minimum_required(VERSION 3.0)
@@ -374,6 +403,7 @@ else()
   include_directories(
           src/
   )
+  link_directories(${PROJECT_SOURCE_DIR}/3rdparty/livox_sdk/aarch64/lib/)
   #---------------------------------------------------------------------------------------
   # generate excutable and add libraries
   #---------------------------------------------------------------------------------------
