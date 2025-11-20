@@ -18,18 +18,6 @@
 
 #include <opencv2/opencv.hpp>
 
-static bool kbhit() {
-  termios term;
-  tcgetattr(0, &term);
-  termios term2 = term;
-  term2.c_lflag &= ~ICANON;
-  tcsetattr(0, TCSANOW, &term2);
-  int byteswaiting;
-  ioctl(0, FIONREAD, &byteswaiting);
-  tcsetattr(0, TCSANOW, &term);
-  return byteswaiting > 0;
-}
-
 template<class T>
 struct blockqueue {
   int put(T &&t) {
@@ -115,12 +103,6 @@ class ROS2DataCollection : public rclcpp::Node {
     snap_shot_ = this->declare_parameter("snap_shot", false);
     gravity_ = this->declare_parameter("gravity", gravity_);
     gap_mode_ = this->declare_parameter("gap_mode", gap_mode_);
-    float free_space_ratio = get_free_space(home_dir);
-    if (free_space_ratio < 0.05) {
-      std::cout << "free_space_ratio of " << home_dir << " is: " << free_space_ratio << ", which is full!" << std::endl;
-      std::cout << "Please chose another directory or change another" << std::endl;
-      //std::exit(-1);
-    }
 
     data_dir_ = home_dir + generate_timestamp_folder();
     image_dir_ = data_dir_ + "/image/";
@@ -130,6 +112,19 @@ class ROS2DataCollection : public rclcpp::Node {
     system(("mkdir -p " + image_dir_).c_str());
     system(("mkdir -p " + pcd_dir_).c_str());
     system(("mkdir -p " + imu_dir_).c_str());
+
+    float space_ratio = 1 - get_free_space(home_dir);
+    if (space_ratio > 0.9) {
+      std::cout << std::fixed << std::setprecision(1)
+                << "space_ratio of '" << home_dir << "' is: "
+                << space_ratio * 100 << "%, which is nearly full!" << std::endl;
+      std::cout << "Please chose another directory or port over to another disk !!" << std::endl;
+      //std::exit(-1);
+    } else {
+      std::cout << std::fixed << std::setprecision(1)
+                << "space_ratio of '" << home_dir << "' is: "
+                << space_ratio * 100 << "%" << std::endl;
+    }
 
     RCLCPP_WARN(this->get_logger(),
                 "data_dir: %s\n"
@@ -270,10 +265,10 @@ class ROS2DataCollection : public rclcpp::Node {
       if (si.capacity == 0) {
         return 0.0;
       }
-      std::cout << "Path: " << path << " space situation: " << std::endl;
-      std::cout << "Capacity: " << si.capacity / 1024 / 1024 << " MB\n";
-      std::cout << "Free:     " << si.free / 1024 / 1024 << " MB\n";
-      std::cout << "Available:" << si.available / 1024 / 1024  << " MB\n";
+      std::cout << "Path:  " << path << " space situation: " << std::endl;
+      std::cout << "Capacity:  " << si.capacity / 1024 / 1024 << " MB\n";
+      std::cout << "Free:      " << si.free / 1024 / 1024 << " MB\n";
+      std::cout << "Available: " << si.available / 1024 / 1024  << " MB\n";
       return static_cast<float>(si.available) / static_cast<float>(si.capacity);
     } catch (const std::exception& e) {
       std::cerr << "Error: " << e.what() << std::endl;
