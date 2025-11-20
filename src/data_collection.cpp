@@ -119,7 +119,7 @@ class ROS2DataCollection : public rclcpp::Node {
     if (free_space_ratio < 0.05) {
       std::cout << "free_space_ratio of " << home_dir << " is: " << free_space_ratio << ", which is full!" << std::endl;
       std::cout << "Please chose another directory or change another" << std::endl;
-      std::exit(-1);
+      //std::exit(-1);
     }
 
     data_dir_ = home_dir + generate_timestamp_folder();
