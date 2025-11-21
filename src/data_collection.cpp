@@ -116,14 +116,14 @@ class ROS2DataCollection : public rclcpp::Node {
     float space_ratio = 1 - get_free_space(home_dir);
     if (space_ratio > 0.9) {
       std::cout << std::fixed << std::setprecision(1)
-                << "space_ratio of '" << home_dir << "' is: "
-                << space_ratio * 100 << "%, which is nearly full!" << std::endl;
+                << "The disk of dir: '" << home_dir << "' is now at: "
+                << space_ratio * 100 << "% usage, which is nearly full!" << std::endl;
       std::cout << "Please chose another directory or port over to another disk !!" << std::endl;
       //std::exit(-1);
     } else {
       std::cout << std::fixed << std::setprecision(1)
-                << "space_ratio of '" << home_dir << "' is: "
-                << space_ratio * 100 << "%" << std::endl;
+                << "The disk of dir: '" << home_dir << "' is now at: "
+                << space_ratio * 100 << "% usage" << std::endl;
     }
 
     RCLCPP_WARN(this->get_logger(),
@@ -328,17 +328,29 @@ class ROS2DataCollection : public rclcpp::Node {
 
     std::stringstream stringstream;
     std::string log_string;
-
+    if (!rclcpp::ok()) {
+      return;
+    }
     RCLCPP_INFO(this->get_logger(),
                 "get image at %fs, msg ts is: %fs, diff: %fms",
                 now, timestamp * 1e-9, now * 1e3 - timestamp * 1e-6);
 
+    if (status_image_pub_->get_subscription_count() > 0) {
+      std::string show_text = "OK";
+      cv::Mat nv12_img = cv::Mat(msg->height, msg->width, CV_8UC1, msg->data.data());
+      if (std::abs(msg->header.stamp.sec - last_get_pcd_time_.load()) > 3
+          ||  (msg->header.stamp.nanosec / 10000) % 100 != 0) {
+        show_text = "NO";
+      }
+      cv::putText(nv12_img, show_text, cv::Point(40, 120),
+                  cv::FONT_HERSHEY_TRIPLEX, 4.0, CV_RGB(255, 255, 255), 5);
+      status_image_pub_->publish(*msg);
+    }
+
     if (is_gap(msg->header.stamp)) {
       return;
     }
-    if (!rclcpp::ok()) {
-      return;
-    }
+
     if (last_timestamp != 0) {
       double diff = (timestamp - last_timestamp) * 1e-9;
       if (diff < 0) {
@@ -374,17 +386,6 @@ class ROS2DataCollection : public rclcpp::Node {
       } else {
         image_que_.pop_front();
       }
-    }
-    if (status_image_pub_->get_subscription_count() > 0) {
-      std::string show_text = "OK";
-      cv::Mat nv12_img = cv::Mat(msg->height, msg->width, CV_8UC1, msg->data.data());
-      if (std::abs(msg->header.stamp.sec - last_get_pcd_time_.load()) > 3
-      ||  (msg->header.stamp.nanosec / 10000) % 100 != 0) {
-        show_text = "NO";
-      }
-      cv::putText(nv12_img, show_text, cv::Point(30, 50),
-          cv::FONT_HERSHEY_TRIPLEX, 2.0, CV_RGB(255, 255, 255), 2);
-      status_image_pub_->publish(*msg);
     }
   }
 
