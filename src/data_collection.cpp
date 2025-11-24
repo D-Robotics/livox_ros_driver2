@@ -368,9 +368,6 @@ class ROS2DataCollection : public rclcpp::Node {
         log_file_ << log_string << std::endl;
         RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
       }
-      if (diff < 0.999) {
-        return;
-      }
     }
 
     last_timestamp = timestamp;
