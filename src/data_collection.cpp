@@ -102,7 +102,10 @@ class ROS2DataCollection : public rclcpp::Node {
     int save_thread_num = this->declare_parameter("save_thread_num", 4);;
     snap_shot_ = this->declare_parameter("snap_shot", false);
     gravity_ = this->declare_parameter("gravity", gravity_);
-    gap_mode_ = this->declare_parameter("gap_mode", gap_mode_);
+    image_gap_mode_ = this->declare_parameter("image_gap_mode", image_gap_mode_);
+    lidar_gap_mode_ = this->declare_parameter("lidar_gap_mode", lidar_gap_mode_);
+    bool check_is_external_driver = this->declare_parameter("check_ext_driver", false);
+    bool enable_pause = this->declare_parameter("enable_pause", true);
 
     data_dir_ = home_dir + generate_timestamp_folder();
     image_dir_ = data_dir_ + "/image/";
@@ -112,13 +115,19 @@ class ROS2DataCollection : public rclcpp::Node {
     system(("mkdir -p " + image_dir_).c_str());
     system(("mkdir -p " + pcd_dir_).c_str());
     system(("mkdir -p " + imu_dir_).c_str());
-
-    float space_ratio = 1 - get_free_space(home_dir);
+    float capacity;
+    float space_ratio = 1 - get_free_space(home_dir, capacity);
+    if (check_is_external_driver) {
+      if (capacity < 100) {
+        std::cout << "[ERROR] Please check the Mobile Hard Disk is plugged in!!!!!!" << std::endl;
+        std::exit(-1);
+      }
+    }
     if (space_ratio > 0.9) {
       std::cout << std::fixed << std::setprecision(1)
-                << "The disk of dir: '" << home_dir << "' is now at: "
+                << "[ERROR] The disk of dir: '" << home_dir << "' is now at: "
                 << space_ratio * 100 << "% usage, which is nearly full!" << std::endl;
-      std::cout << "Please chose another directory or port over to another disk !!" << std::endl;
+      std::cout << "[ERROR] Please chose another directory or port over to another disk !!" << std::endl;
       //std::exit(-1);
     } else {
       std::cout << std::fixed << std::setprecision(1)
@@ -129,9 +138,9 @@ class ROS2DataCollection : public rclcpp::Node {
     RCLCPP_WARN(this->get_logger(),
                 "data_dir: %s\n"
                 "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
-                "snap_shot: %d, gravity_: %f, gap_mode: %d",
+                "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
-                snap_shot_, gravity_, gap_mode_);
+                snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver);
 
     imu_filename_ = imu_dir_ + "/imu_data.txt";
     imu_file_.open(imu_filename_, std::ios::out | std::ios::app);
@@ -164,7 +173,7 @@ class ROS2DataCollection : public rclcpp::Node {
 
     status_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
         "~/status_image_combine", 10
-        );
+    );
 
     if (snap_shot_) {
       auto snap_func = [this]() {
@@ -217,6 +226,23 @@ class ROS2DataCollection : public rclcpp::Node {
         RCLCPP_WARN(this->get_logger(), "snap_shot exit.");
       };
       save_threads_.emplace_back(std::make_shared<std::thread>(snap_func));
+    } else {
+      auto get_pause_func = [this]() {
+        RCLCPP_WARN(this->get_logger(), "get_pause_func start.");
+        while (rclcpp::ok()) {
+          sensor_msgs::msg::Image::SharedPtr img_msg = nullptr;
+          sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg = nullptr;
+          int c;
+          c = getchar();
+          std::cout << "user input: " << c << std::endl;
+          if (c == '\n') {
+            is_paused_ = !is_paused_;
+          }
+        }
+        RCLCPP_WARN(this->get_logger(), "get_pause_func exit.");
+      };
+      if (enable_pause)
+        save_threads_.emplace_back(std::make_shared<std::thread>(get_pause_func));
     }
   }
 
@@ -243,8 +269,10 @@ class ROS2DataCollection : public rclcpp::Node {
   std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0};
   float gravity_ = 9.81;
   bool snap_shot_;
-  int gap_mode_ = 0;
+  int image_gap_mode_ = 0;
+  int lidar_gap_mode_ = 0;
   double get_shot_time_;
+  std::atomic_bool is_paused_{false};
 
   std::atomic_int32_t last_get_pcd_time_{0};
 
@@ -259,19 +287,20 @@ class ROS2DataCollection : public rclcpp::Node {
 
   std::vector<std::shared_ptr<std::thread>> save_threads_;
 
-  float get_free_space(const std::string &path) {
+  float get_free_space(const std::string &path, float &capacity) {
     try {
       std::filesystem::space_info si = std::filesystem::space(path);
       if (si.capacity == 0) {
         return 0.0;
       }
       std::cout << "Path:  " << path << " space situation: " << std::endl;
-      std::cout << "Capacity:  " << si.capacity / 1024 / 1024 << " MB\n";
-      std::cout << "Free:      " << si.free / 1024 / 1024 << " MB\n";
-      std::cout << "Available: " << si.available / 1024 / 1024  << " MB\n";
+      std::cout << "Capacity:  " << si.capacity / 1024 / 1024 / 1024 << " GB\n";
+      capacity = si.capacity / 1024 / 1024 / 1024;
+      std::cout << "Free:      " << si.free / 1024 / 1024 / 1024 << " GB\n";
+      std::cout << "Available: " << si.available / 1024 / 1024 / 1024 << " GB\n";
       return static_cast<float>(si.available) / static_cast<float>(si.capacity);
     } catch (const std::exception& e) {
-      std::cerr << "Error: " << e.what() << std::endl;
+      std::cerr << "[ERROR] : " << e.what() << std::endl;
       return 0.0;
     }
   }
@@ -282,7 +311,7 @@ class ROS2DataCollection : public rclcpp::Node {
     std::tm tm = *std::localtime(&t);
 
     std::ostringstream oss;
-    oss << std::put_time(&tm, "%Y-%m-%d-%H:%M:%S");
+    oss << std::put_time(&tm, "%Y-%m-%d-%H.%M.%S");
 
     return std::string( + "/ros2_data/" + oss.str());
   }
@@ -298,19 +327,19 @@ class ROS2DataCollection : public rclcpp::Node {
     imu_file_.flush();
   }
 
-  bool is_gap(const builtin_interfaces::msg::Time &time) const {
+  bool is_gap(const builtin_interfaces::msg::Time &time, int gap_mode) const {
     std::vector<char> last_sec_v_1 {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
     std::vector<char> last_sec_v_2 {'0', '2', '4', '6', '8'};
     std::vector<char> last_sec_v_5 {'0', '5'};
     std::vector<char> last_sec_v;
-    if (gap_mode_ <= 0) {
+    if (gap_mode <= 0) {
       return false;
     }
-    if (gap_mode_ == 1) {
+    if (gap_mode == 1) {
       last_sec_v = last_sec_v_1;
-    } else if (gap_mode_ == 2) {
+    } else if (gap_mode == 2) {
       last_sec_v = last_sec_v_2;
-    } else if (gap_mode_ == 5) {
+    } else if (gap_mode == 5) {
       last_sec_v = last_sec_v_5;
     }
     char last_sec = std::to_string(time.sec).back();
@@ -336,18 +365,29 @@ class ROS2DataCollection : public rclcpp::Node {
                 now, timestamp * 1e-9, now * 1e3 - timestamp * 1e-6);
 
     if (status_image_pub_->get_subscription_count() > 0) {
+      int baseline = 0;
+      cv::Point org = cv::Point(40, 120);
       std::string show_text = "OK";
-      cv::Mat nv12_img = cv::Mat(msg->height, msg->width, CV_8UC1, msg->data.data());
-      if (std::abs(msg->header.stamp.sec - last_get_pcd_time_.load()) > 3
-          ||  (msg->header.stamp.nanosec / 10000) % 100 != 0) {
+      auto dst = std::make_shared<sensor_msgs::msg::Image>(*msg);
+      cv::Mat nv12_img = cv::Mat(dst->height, dst->width, CV_8UC1, dst->data.data());
+      if (std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3
+          ||  (dst->header.stamp.nanosec / 1000000) % 100 != 0) {
         show_text = "NO";
       }
-      cv::putText(nv12_img, show_text, cv::Point(40, 120),
+      //std::cout << "\rshow_text: " << show_text << std::endl;
+      //std::cout << "msg->header.stamp.nanosec: " << msg->header.stamp.nanosec << std::endl;
+      //std::cout << "msg->header.stamp.nanosec / 1000000: " << msg->header.stamp.nanosec / 1000000 << std::endl;
+      cv::Size textSize = cv::getTextSize(show_text, cv::FONT_HERSHEY_TRIPLEX, 4.0, 5, &baseline);
+
+      cv::Point bl = cv::Point(org.x - 4, org.y + 4);
+      cv::Point tr = cv::Point(org.x + textSize.width + 4, org.y - textSize.height - 4);
+      cv::rectangle(nv12_img, bl, tr, CV_RGB(0, 0, 0), cv::FILLED);
+      cv::putText(nv12_img, show_text, org,
                   cv::FONT_HERSHEY_TRIPLEX, 4.0, CV_RGB(255, 255, 255), 5);
-      status_image_pub_->publish(*msg);
+      status_image_pub_->publish(*dst);
     }
 
-    if (is_gap(msg->header.stamp)) {
+    if (is_gap(msg->header.stamp, image_gap_mode_)) {
       return;
     }
 
@@ -359,7 +399,7 @@ class ROS2DataCollection : public rclcpp::Node {
         log_string = stringstream.str();
         log_file_ << log_string << std::endl;
         RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
-      } else if (diff > 0.18 && !gap_mode_) {
+      } else if (diff > 0.18 && !image_gap_mode_) {
         lost_cnt++;
         stringstream << std::fixed << "[image] last timestamp is: " << last_timestamp * 1e-9
                      << ", current timestamp is: " << timestamp * 1e-9 << ", diff is: " << diff
@@ -372,17 +412,21 @@ class ROS2DataCollection : public rclcpp::Node {
 
     last_timestamp = timestamp;
 
-    int sz = image_que_.put(msg);
-    if (sz > 10) {
-      if (!snap_shot_) {
-        stringstream.clear();
-        stringstream << std::fixed << "[image] que is larger than 10: " << sz;
-        log_string = stringstream.str();
-        log_file_ << log_string << std::endl;
-        RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
-      } else {
-        image_que_.pop_front();
+    if (!is_paused_) {
+      int sz = image_que_.put(msg);
+      if (sz > 10) {
+        if (!snap_shot_) {
+          stringstream.clear();
+          stringstream << std::fixed << "[image] que is larger than 10: " << sz;
+          log_string = stringstream.str();
+          log_file_ << log_string << std::endl;
+          RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
+        } else {
+          image_que_.pop_front();
+        }
       }
+    } else {
+      std::cout << "\rdata saving is stop!!!                        " << std::flush;
     }
   }
 
@@ -395,7 +439,7 @@ class ROS2DataCollection : public rclcpp::Node {
     std::stringstream stringstream;
     std::string log_string;
 
-    if (is_gap(msg->header.stamp)) {
+    if (is_gap(msg->header.stamp, lidar_gap_mode_)) {
       return;
     }
 
@@ -414,7 +458,7 @@ class ROS2DataCollection : public rclcpp::Node {
         log_string = stringstream.str();
         log_file_ << log_string << std::endl;
         RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
-      } else if (diff > 0.18  && !gap_mode_) {
+      } else if (diff > 0.18  && !lidar_gap_mode_) {
         lost_cnt++;
         stringstream << std::fixed << "[pcd] last timestamp is: " << last_timestamp * 1e-9
                      << ", current timestamp is: " << timestamp * 1e-9 << ", diff is: " << diff
@@ -425,16 +469,19 @@ class ROS2DataCollection : public rclcpp::Node {
       }
     }
     last_timestamp = timestamp;
-    int sz = pcd_que_.put(msg);
-    if (sz > 10) {
-      if (!snap_shot_) {
-        stringstream.clear();
-        stringstream << std::fixed << "[pcd] que is larger than 10: " << sz;
-        log_string = stringstream.str();
-        log_file_ << log_string << std::endl;
-        RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
-      } else {
-        pcd_que_.pop_front();
+
+    if (!is_paused_) {
+      int sz = pcd_que_.put(msg);
+      if (sz > 10) {
+        if (!snap_shot_) {
+          stringstream.clear();
+          stringstream << std::fixed << "[pcd] que is larger than 10: " << sz;
+          log_string = stringstream.str();
+          log_file_ << log_string << std::endl;
+          RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
+        } else {
+          pcd_que_.pop_front();
+        }
       }
     }
   }
@@ -497,11 +544,13 @@ class ROS2DataCollection : public rclcpp::Node {
       sensor_msgs::msg::PointCloud2::SharedPtr msg;
       if (pcd_que_.get(msg)) {
         uint64_t timestamp = msg->header.stamp.sec * 1e9 + msg->header.stamp.nanosec;
-        save_pcd(timestamp, msg);
+        if (!is_paused_) {
+          save_pcd(timestamp, msg);
+        }
       }
     }
     RCLCPP_WARN_STREAM(this->get_logger(),
-        "quit pcd queue save thread, left: " << pcd_que_.size());
+                       "quit pcd queue save thread, left: " << pcd_que_.size());
   }
 
   void save_image_thread() {
@@ -509,18 +558,19 @@ class ROS2DataCollection : public rclcpp::Node {
       sensor_msgs::msg::Image ::SharedPtr msg;
       if (image_que_.get(msg)) {
         uint64_t timestamp = msg->header.stamp.sec * 1e9 + msg->header.stamp.nanosec;
-        save_image(timestamp, msg);
-        if (gap_mode_) {
-          printf("\rwe have saved image: %d, pcd: %d",
-              image_save_cnt_.load(), pcd_save_cnt_.load());
-          std::cout << std::flush;
+        if (is_paused_) {
+          std::cout << "\rdata saving is stop!!!                        " << std::flush;
+        } else {
+          save_image(timestamp, msg);
+          std::cout << "\rwe have saved image: "
+                    << image_save_cnt_.load()
+                    << ", pcd: " << pcd_save_cnt_.load() << std::flush;
         }
       }
     }
     RCLCPP_WARN_STREAM(this->get_logger(),
                        "quit image queue save thread, left: " << image_que_.size());
   }
-
 };
 
 int main(int argc, char** argv) {
