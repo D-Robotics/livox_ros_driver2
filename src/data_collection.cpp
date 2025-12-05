@@ -17,6 +17,7 @@
 #include <termios.h>
 
 #include <opencv2/opencv.hpp>
+#include "motion_detector.h"
 
 template<class T>
 struct blockqueue {
@@ -91,6 +92,18 @@ struct blockqueue {
   std::deque<T> que;
 };
 
+bool kbhit() {
+  termios term;
+  tcgetattr(0, &term);
+  termios term2 = term;
+  term2.c_lflag &= ~ICANON;
+  tcsetattr(0, TCSANOW, &term2);
+  int byteswaiting;
+  ioctl(0, FIONREAD, &byteswaiting);
+  tcsetattr(0, TCSANOW, &term);
+  return byteswaiting > 0;
+}
+
 class ROS2DataCollection : public rclcpp::Node {
  public:
   ROS2DataCollection() : Node("ROS2DataCollection") {
@@ -100,12 +113,18 @@ class ROS2DataCollection : public rclcpp::Node {
     std::string lidar_topic = this->declare_parameter("lidar_topic", "/livox/lidar");;
     std::string image_topic = this->declare_parameter("image_topic", "/image_combine_raw");;
     int save_thread_num = this->declare_parameter("save_thread_num", 4);;
-    snap_shot_ = this->declare_parameter("snap_shot", false);
+    snap_shot_ = this->declare_parameter("snap_shot", snap_shot_);
     gravity_ = this->declare_parameter("gravity", gravity_);
     image_gap_mode_ = this->declare_parameter("image_gap_mode", image_gap_mode_);
     lidar_gap_mode_ = this->declare_parameter("lidar_gap_mode", lidar_gap_mode_);
+    motion_detect_ = this->declare_parameter("motion_detect", motion_detect_);
+    int motion_window_size = this->declare_parameter("motion_window_size", 200);
     bool check_is_external_driver = this->declare_parameter("check_ext_driver", false);
     bool enable_pause = this->declare_parameter("enable_pause", true);
+
+    if (motion_detect_) {
+      motion_detector_ = std::make_shared<MotionDetector>(motion_window_size);
+    }
 
     data_dir_ = home_dir + generate_timestamp_folder();
     image_dir_ = data_dir_ + "/image/";
@@ -185,6 +204,10 @@ class ROS2DataCollection : public rclcpp::Node {
           sensor_msgs::msg::Image::SharedPtr img_msg = nullptr;
           sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg = nullptr;
           RCLCPP_WARN(this->get_logger(), "waiting for snap shot cmd, please enter ENTER.");
+          if (!kbhit()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+          }
           int c;
           c = getchar();
           std::cout << "user input: " << c << std::endl;
@@ -233,6 +256,10 @@ class ROS2DataCollection : public rclcpp::Node {
         while (rclcpp::ok()) {
           sensor_msgs::msg::Image::SharedPtr img_msg = nullptr;
           sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg = nullptr;
+          if (!kbhit()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+          }
           int c;
           c = getchar();
           std::cout << "user input: " << c << std::endl;
@@ -269,7 +296,7 @@ class ROS2DataCollection : public rclcpp::Node {
   std::ofstream log_file_;
   std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0};
   float gravity_ = 9.81;
-  bool snap_shot_;
+  bool snap_shot_{false}, motion_detect_ {false};
   int image_gap_mode_ = 0;
   int lidar_gap_mode_ = 0;
   double get_shot_time_;
@@ -277,6 +304,7 @@ class ROS2DataCollection : public rclcpp::Node {
 
   std::atomic_int32_t last_get_pcd_time_{0};
 
+  std::shared_ptr<MotionDetector> motion_detector_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
@@ -325,6 +353,12 @@ class ROS2DataCollection : public rclcpp::Node {
               << msg->angular_velocity.x << "," << msg->angular_velocity.y << "," << msg->angular_velocity.z << ","
               << msg->linear_acceleration.x * gravity_ << "," << msg->linear_acceleration.y * gravity_ << "," << msg->linear_acceleration.z * gravity_
               << std::endl;
+    if (motion_detect_) {
+      ImuData imu_data(timestamp);
+      imu_data.wx = msg->angular_velocity.x, imu_data.wy = msg->angular_velocity.y, imu_data.wz = msg->angular_velocity.z;
+      imu_data.ax = msg->linear_acceleration.x, imu_data.ay = msg->linear_acceleration.y, imu_data.az = msg->linear_acceleration.z;
+      motion_detector_->FeedImu(imu_data);
+    }
     imu_file_.flush();
   }
 
@@ -371,10 +405,28 @@ class ROS2DataCollection : public rclcpp::Node {
       std::string show_text = "OK";
       auto dst = std::make_shared<sensor_msgs::msg::Image>(*msg);
       cv::Mat nv12_img = cv::Mat(dst->height, dst->width, CV_8UC1, dst->data.data());
-      if (std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3
-          ||  (dst->header.stamp.nanosec / 1000000) % 100 != 0) {
-        show_text = "NO";
+      if (std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3) {
+        //  no Lidar msg received
+        show_text = "NO LeiDa";
+      } else if ((dst->header.stamp.nanosec / 1000000) % 100 != 0) {
+        //  camera is not sync
+        show_text = "NO Tongbu";
+      } else if (motion_detect_) {
+        double a_var, w_var;
+        uint64_t nearest_imu_timestamp;
+        auto s = std::chrono::high_resolution_clock::now();
+        MotionDetector::Status motion_status = motion_detector_->GetStatus(
+            timestamp, nearest_imu_timestamp, a_var, w_var);
+        auto e = std::chrono::high_resolution_clock::now();
+        std::cout << "Motion GetStatus consume: " <<
+                      std::chrono::duration_cast<std::chrono::milliseconds>(e - s).count()
+                  << std::endl;
+        if (motion_status != MotionDetector::STATIC) {
+          //  body is in motion, not in static
+          show_text = "NO JingZhi";
+        }
       }
+
       //std::cout << "\rshow_text: " << show_text << std::endl;
       //std::cout << "msg->header.stamp.nanosec: " << msg->header.stamp.nanosec << std::endl;
       //std::cout << "msg->header.stamp.nanosec / 1000000: " << msg->header.stamp.nanosec / 1000000 << std::endl;
