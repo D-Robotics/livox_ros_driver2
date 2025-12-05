@@ -138,9 +138,10 @@ class ROS2DataCollection : public rclcpp::Node {
     RCLCPP_WARN(this->get_logger(),
                 "data_dir: %s\n"
                 "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
-                "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d",
+                "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
+                "enable_pause: %d",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
-                snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver);
+                snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver, enable_pause);
 
     imu_filename_ = imu_dir_ + "/imu_data.txt";
     imu_file_.open(imu_filename_, std::ios::out | std::ios::app);
