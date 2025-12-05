@@ -278,6 +278,10 @@ class ROS2DataCollection : public rclcpp::Node {
     for (auto &t : save_threads_) {
       t->join();
     }
+    RCLCPP_WARN_STREAM(this->get_logger(),
+                       "quit pcd queue save thread, left: " << pcd_que_.size());
+    RCLCPP_WARN_STREAM(this->get_logger(),
+                       "quit image queue save thread, left: " << image_que_.size());
     save_threads_.clear();
     if (imu_file_.is_open()) {
       imu_file_.close();
@@ -402,7 +406,7 @@ class ROS2DataCollection : public rclcpp::Node {
     if (status_image_pub_->get_subscription_count() > 0) {
       int baseline = 0;
       cv::Point org = cv::Point(40, 120);
-      std::string show_text = "OK";
+      std::string show_text = "OK,image:" + std::to_string(image_save_cnt_) + ",pcd:" + std::to_string(pcd_save_cnt_);
       auto dst = std::make_shared<sensor_msgs::msg::Image>(*msg);
       cv::Mat nv12_img = cv::Mat(dst->height, dst->width, CV_8UC1, dst->data.data());
       if (std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3) {
@@ -424,13 +428,25 @@ class ROS2DataCollection : public rclcpp::Node {
         if (motion_status != MotionDetector::STATIC) {
           //  body is in motion, not in static
           show_text = "NO JingZhi";
+          if (motion_status == MotionDetector::INIT) {
+
+          }
+          if (motion_status == MotionDetector::IMU_TOO_FAR) {
+
+          }
+          if (motion_status == MotionDetector::ENTERING_MOTION) {
+
+          }
+          if (motion_status == MotionDetector::ENTERING_STATIC) {
+
+          }
         }
       }
 
       //std::cout << "\rshow_text: " << show_text << std::endl;
       //std::cout << "msg->header.stamp.nanosec: " << msg->header.stamp.nanosec << std::endl;
       //std::cout << "msg->header.stamp.nanosec / 1000000: " << msg->header.stamp.nanosec / 1000000 << std::endl;
-      cv::Size textSize = cv::getTextSize(show_text, cv::FONT_HERSHEY_TRIPLEX, 4.0, 5, &baseline);
+      cv::Size textSize = cv::getTextSize(show_text, cv::FONT_HERSHEY_TRIPLEX, 3.5, 5, &baseline);
 
       cv::Point bl = cv::Point(org.x - 4, org.y + 4);
       cv::Point tr = cv::Point(org.x + textSize.width + 4, org.y - textSize.height - 4);
@@ -602,8 +618,6 @@ class ROS2DataCollection : public rclcpp::Node {
         }
       }
     }
-    RCLCPP_WARN_STREAM(this->get_logger(),
-                       "quit pcd queue save thread, left: " << pcd_que_.size());
   }
 
   void save_image_thread() {
@@ -621,8 +635,6 @@ class ROS2DataCollection : public rclcpp::Node {
         }
       }
     }
-    RCLCPP_WARN_STREAM(this->get_logger(),
-                       "quit image queue save thread, left: " << image_que_.size());
   }
 };
 
