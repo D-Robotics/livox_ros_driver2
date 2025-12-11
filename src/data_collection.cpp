@@ -118,6 +118,7 @@ class ROS2DataCollection : public rclcpp::Node {
     image_gap_mode_ = this->declare_parameter("image_gap_mode", image_gap_mode_);
     lidar_gap_mode_ = this->declare_parameter("lidar_gap_mode", lidar_gap_mode_);
     motion_detect_ = this->declare_parameter("motion_detect", motion_detect_);
+    check_camera_sync_ = this->declare_parameter("check_camera_sync", check_camera_sync_);
     int motion_window_size = this->declare_parameter("motion_window_size", 200);
     bool check_is_external_driver = this->declare_parameter("check_ext_driver", false);
     bool enable_pause = this->declare_parameter("enable_pause", true);
@@ -300,7 +301,7 @@ class ROS2DataCollection : public rclcpp::Node {
   std::ofstream log_file_;
   std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0};
   float gravity_ = 9.81;
-  bool snap_shot_{false}, motion_detect_ {false};
+  bool snap_shot_{false}, motion_detect_ {false}, check_camera_sync_{true};
   int image_gap_mode_ = 0;
   int lidar_gap_mode_ = 0;
   double get_shot_time_;
@@ -366,7 +367,7 @@ class ROS2DataCollection : public rclcpp::Node {
     imu_file_.flush();
   }
 
-  bool is_gap(const builtin_interfaces::msg::Time &time, int gap_mode) const {
+  bool is_gap(const builtin_interfaces::msg::Time &time, int gap_mode, bool check_sync = false) const {
     std::vector<char> last_sec_v_1 {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
     std::vector<char> last_sec_v_2 {'0', '2', '4', '6', '8'};
     std::vector<char> last_sec_v_5 {'0', '5'};
@@ -382,7 +383,7 @@ class ROS2DataCollection : public rclcpp::Node {
       last_sec_v = last_sec_v_5;
     }
     char last_sec = std::to_string(time.sec).back();
-    if ((int)(time.nanosec / 1e8) != 0) {
+    if (check_sync && (int)(time.nanosec / 1e8) != 0) {
       return true;
     }
     return std::find(last_sec_v.begin(), last_sec_v.end(), last_sec) == last_sec_v.end();
@@ -446,17 +447,17 @@ class ROS2DataCollection : public rclcpp::Node {
       //std::cout << "\rshow_text: " << show_text << std::endl;
       //std::cout << "msg->header.stamp.nanosec: " << msg->header.stamp.nanosec << std::endl;
       //std::cout << "msg->header.stamp.nanosec / 1000000: " << msg->header.stamp.nanosec / 1000000 << std::endl;
-      cv::Size textSize = cv::getTextSize(show_text, cv::FONT_HERSHEY_TRIPLEX, 3.5, 5, &baseline);
+      cv::Size textSize = cv::getTextSize(show_text, cv::FONT_HERSHEY_TRIPLEX, 3.5, 4, &baseline);
 
       cv::Point bl = cv::Point(org.x - 4, org.y + 4);
       cv::Point tr = cv::Point(org.x + textSize.width + 4, org.y - textSize.height - 4);
       cv::rectangle(nv12_img, bl, tr, CV_RGB(0, 0, 0), cv::FILLED);
       cv::putText(nv12_img, show_text, org,
-                  cv::FONT_HERSHEY_TRIPLEX, 4.0, CV_RGB(255, 255, 255), 5);
+                  cv::FONT_HERSHEY_TRIPLEX, 3.5, CV_RGB(255, 255, 255), 4);
       status_image_pub_->publish(*dst);
     }
 
-    if (is_gap(msg->header.stamp, image_gap_mode_)) {
+    if (is_gap(msg->header.stamp, image_gap_mode_, check_camera_sync_)) {
       return;
     }
 

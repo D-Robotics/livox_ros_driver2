@@ -12,7 +12,7 @@ import numpy as np
 import cv2
 import yaml
 import shutil
-
+from tqdm import tqdm
 
 def load_yaml_calib(yaml_path):
     with open(yaml_path, 'r') as f:
@@ -147,7 +147,7 @@ def save_bgr(left_bgr, right_bgr, out_prefix, stereo_dir, cam0_dir, cam1_dir, ca
     cv2.imwrite(os.path.join(cam0_dir, f'{out_prefix}.png'), left_bgr)
     cv2.imwrite(os.path.join(cam1_dir, f'{out_prefix}.png'), right_bgr)
     cv2.imwrite(os.path.join(cam_combine_dir, f'{out_prefix}.png'), combine)
-    print(f'[OK] {out_prefix}')
+    #print(f'[OK] {out_prefix}')
 
 
 def save_pcd(image_path, pcd_seq_dir, pcd_ts_dir, num):
@@ -219,25 +219,29 @@ def main():
             prefix = os.path.splitext(os.path.basename(p))[0]
             
             if sync_with_pcd and save_pcd(p, pcd_seq_dir, pcd_ts_dir, num) == False :
-                continue            
-            
-            left_bgr, right_bgr = read_nv12_vstack(p, w, h)
-            rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, prefix,
-                             stereo_dir, cam0_dir, cam1_dir, cam_combine_dir,
-                             num)
+                continue
+            try:
+                left_bgr, right_bgr = read_nv12_vstack(p, w, h)
+                rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, prefix,
+                                 stereo_dir, cam0_dir, cam1_dir, cam_combine_dir,
+                                 num)
+            except Exception as e:
+                print(f"error: {type(e).__name__}: {e}, timestamp: {prefix}")
             num = num + 1
     else:
         w, h = target_image_size
         for p in files:
             prefix = os.path.splitext(os.path.basename(p))[0]
-            print("prefix:", prefix)
+            #print("prefix:", prefix)
 
             if sync_with_pcd and save_pcd(p, pcd_seq_dir, pcd_ts_dir, num) == False :
                 continue
-
-            left_bgr, right_bgr = read_nv12_vstack(p, w, h)
-            save_bgr(left_bgr, right_bgr, prefix,
-                     stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
+            try:
+                left_bgr, right_bgr = read_nv12_vstack(p, w, h)
+                save_bgr(left_bgr, right_bgr, prefix,
+                         stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
+            except Exception as e:
+                print(f"error: {type(e).__name__}: {e}, timestamp: {prefix}")
             num = num + 1
 
     print('[DONE]')
