@@ -29,7 +29,8 @@ struct MotionDetector {
     IMU_TOO_FAR
   };
 
-  explicit MotionDetector(uint32_t motion_window_size) : window_size_(motion_window_size), status_(INIT) {
+  explicit MotionDetector(uint32_t motion_window_size,
+      double a_th, double w_th) : window_size_(motion_window_size), a_th_(a_th), w_th_(w_th), status_(INIT) {
 
   }
 
