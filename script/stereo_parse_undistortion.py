@@ -18,7 +18,10 @@ def load_yaml_calib(yaml_path):
     with open(yaml_path, 'r') as f:
         data = yaml.safe_load(f)
 
-    s = data['stereo0']
+    if "stereo0" in data:
+        s = data['stereo0']
+    else:
+        s = data
     c0, c1 = s['cam0'], s['cam1']
 
     def parse_cam(cam):
@@ -29,10 +32,10 @@ def load_yaml_calib(yaml_path):
                       [0, 0, 1]], dtype=np.float64)
         dist_model = cam.get('distortion_model', 'radtan').lower()
         d = np.array(cam.get('distortion_coeffs', []), dtype=np.float64).reshape(-1, )
-        if dist_model in ('radtan', 'rational_polynomial'):
+        if dist_model in ('radtan', 'rational_polynomial', 'pinhole'):
             D = d
             model = 'pinhole'
-        elif dist_model == 'equidistant':
+        elif dist_model in ('equidistant', 'fisheye'):
             D = d[:4] if d.size >= 4 else np.zeros(4, dtype=np.float64)
             model = 'fisheye'
         else:
@@ -49,36 +52,24 @@ def load_yaml_calib(yaml_path):
     R = T[:3, :3].copy()
     t = T[:3, 3].reshape(3, 1).copy()
 
-    # 从配置读取 fov_scale，默认 1.0
     fov_scale = float(c1.get('fov_scale', 1.0))
+    print(f"fov_scale: {fov_scale}")
 
     return K0, D0, K1, D1, size0, R, t, model0, fov_scale
 
 
 def build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
-                       alpha=0.0, balance=0.0, fov_scale=1.0):
+                       alpha=-1.0, balance=0.0, fov_scale=1.0, out_dir = './'):
     w, h = size
     image_size = (w, h)
     if model == 'fisheye':
-        try:
-            R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(
-                K0, D0, K1, D1, image_size, R, t,
-                flags=cv2.CALIB_ZERO_DISPARITY,
-                newImageSize=target_image_size,
-                balance=balance,
-                fov_scale=fov_scale
-            )
-        except TypeError:
-            R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(
-                K0, D0, K1, D1, image_size, R, t,
-                flags=cv2.CALIB_ZERO_DISPARITY,
-                newImageSize=target_image_size,
-                balance=balance
-            )
-            if abs(fov_scale - 1.0) > 1e-6:
-                for P in (P1, P2):
-                    P[0, 0] *= fov_scale
-                    P[1, 1] *= fov_scale
+        R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(
+            K0, D0, K1, D1, image_size, R, t,
+            flags=cv2.CALIB_ZERO_DISPARITY,
+            newImageSize=target_image_size,
+            balance=balance,
+            fov_scale=fov_scale
+        )
 
         map1x, map1y = cv2.fisheye.initUndistortRectifyMap(
             K0, D0, R1, P1, target_image_size, cv2.CV_32FC1
@@ -93,10 +84,6 @@ def build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
             newImageSize=target_image_size,
             alpha=float(alpha)
         )
-        if abs(fov_scale - 1.0) > 1e-6:
-            for P in (P1, P2):
-                P[0, 0] *= fov_scale
-                P[1, 1] *= fov_scale
 
         map1x, map1y = cv2.initUndistortRectifyMap(
             K0, D0, R1, P1, target_image_size, cv2.CV_32FC1
@@ -104,6 +91,23 @@ def build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
         map2x, map2y = cv2.initUndistortRectifyMap(
             K1, D1, R2, P2, target_image_size, cv2.CV_32FC1
         )
+
+    print("R1:\n", R1)
+    print("R2:\n", R2)
+    print("P1:\n", P1)
+    print("P2:\n", P2)
+    print("Q:\n", Q)
+
+    camera_fx = Q[2, 3]
+    camera_fy = Q[2, 3]
+    camera_cx = -Q[0, 3]
+    camera_cy = -Q[1, 3]
+    base_line = abs(1 / Q[3, 2])
+    print('# fx fy cx cy baseline(m)')
+    print(f'{camera_fx:.6f} {camera_fy:.6f} {camera_cx:.6f} {camera_cy:.6f} {base_line:.6f}')
+    with open(out_dir + '/camera_intrinsic.txt', 'w', encoding='utf-8') as f:
+        f.write('# fx fy cx cy baseline(m)\n')
+        f.write(f'{camera_fx:.6f} {camera_fy:.6f} {camera_cx:.6f} {camera_cy:.6f} {base_line:.6f}')
     return (map1x, map1y), (map2x, map2y)
 
 
@@ -135,7 +139,7 @@ def rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, out_prefix,
     rect_l = cv2.remap(left_bgr, map1x, map1y, interpolation=cv2.INTER_LINEAR)
     rect_r = cv2.remap(right_bgr, map2x, map2y, interpolation=cv2.INTER_LINEAR)
     save_bgr(rect_l, rect_r, out_prefix, stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
-    print(f'[OK] {out_prefix}')
+    #print(f'[OK] {out_prefix}')
 
 
 def save_bgr(left_bgr, right_bgr, out_prefix, stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num):
@@ -155,7 +159,7 @@ def save_pcd(image_path, pcd_seq_dir, pcd_ts_dir, num):
     parent_dir = os.path.dirname(os.path.dirname(image_path))
     pcd_dir = os.path.join(parent_dir, "pcd")
     pcd_file = os.path.join(pcd_dir, ts + ".pcd")
-    
+
     if os.path.exists(pcd_file):
         dst_pcd_seq_file = os.path.join(pcd_seq_dir, f'pcd{num:06d}.pcd')
         dst_pcd_ts_file = os.path.join(pcd_ts_dir, ts + ".pcd")
@@ -165,8 +169,8 @@ def save_pcd(image_path, pcd_seq_dir, pcd_ts_dir, num):
         return True
     else:
         print(f'[FATAL] {pcd_file} is not exist!!')
-        return False 
-    
+        return False
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -184,8 +188,6 @@ def main():
     if args.size is not None:
         target_image_size = tuple(int(x) for x in args.size.split('x'))
 
-    print("target_image_size: ", target_image_size)
-
     if args.sync_with_pcd is not None and args.sync_with_pcd is True:
         sync_with_pcd = True
 
@@ -199,7 +201,7 @@ def main():
     os.makedirs(cam0_dir, exist_ok=True)
     os.makedirs(cam1_dir, exist_ok=True)
     os.makedirs(cam_combine_dir, exist_ok=True)
-    
+
     pcd_seq_dir = os.path.join(out_dir, 'pcd_seq')
     pcd_ts_dir = os.path.join(out_dir, 'pcd_ts')
     os.makedirs(pcd_seq_dir, exist_ok=True)
@@ -212,12 +214,12 @@ def main():
     if args.yaml is not None:
         K0, D0, K1, D1, size, R, t, model, fov_scale = load_yaml_calib(args.yaml)
         maps_left, maps_right = build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
-                                                   alpha=0.0, balance=0.0, fov_scale=fov_scale)
-        w, h = size                                           
+                                                   balance=0.0, fov_scale=fov_scale, out_dir=out_dir)
+        w, h = size
 
-        for p in files:
+        for p in tqdm(files, desc="Processing YUV files"):
             prefix = os.path.splitext(os.path.basename(p))[0]
-            
+
             if sync_with_pcd and save_pcd(p, pcd_seq_dir, pcd_ts_dir, num) == False :
                 continue
             try:
@@ -226,11 +228,12 @@ def main():
                                  stereo_dir, cam0_dir, cam1_dir, cam_combine_dir,
                                  num)
             except Exception as e:
-                print(f"error: {type(e).__name__}: {e}, timestamp: {prefix}")
+                print(f"error: {type(e).__name__}: {e}")
+
             num = num + 1
     else:
         w, h = target_image_size
-        for p in files:
+        for p in tqdm(files, desc="Processing YUV files"):
             prefix = os.path.splitext(os.path.basename(p))[0]
             #print("prefix:", prefix)
 
@@ -241,7 +244,7 @@ def main():
                 save_bgr(left_bgr, right_bgr, prefix,
                          stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
             except Exception as e:
-                print(f"error: {type(e).__name__}: {e}, timestamp: {prefix}")
+                print(f"error: {type(e).__name__}: {e}")
             num = num + 1
 
     print('[DONE]')

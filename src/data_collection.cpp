@@ -161,10 +161,11 @@ class ROS2DataCollection : public rclcpp::Node {
                 "data_dir: %s\n"
                 "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
                 "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
-                "enable_pause: %d, motion_accel_th: %f, motion_gyro_th: %f.",
+                "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
+                "check_camera_sync: %d.",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
                 snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver, enable_pause,
-                a_th, w_th);
+                motion_detect_, motion_window_size, a_th, w_th, check_camera_sync_);
 
     imu_filename_ = imu_dir_ + "/imu_data.txt";
     imu_file_.open(imu_filename_, std::ios::out | std::ios::app);
@@ -370,30 +371,21 @@ class ROS2DataCollection : public rclcpp::Node {
     imu_file_.flush();
   }
 
-  bool is_gap(const builtin_interfaces::msg::Time &time, int gap_mode, bool check_sync = false) const {
-    std::vector<char> last_sec_v_1 {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
-    std::vector<char> last_sec_v_2 {'0', '2', '4', '6', '8'};
-    std::vector<char> last_sec_v_5 {'0', '5'};
-    std::vector<char> last_sec_v;
+  static bool is_gap(const builtin_interfaces::msg::Time &time, int gap_mode,
+                     uint64_t last_timestamp, bool check_sync = false) {
     if (gap_mode <= 0) {
       return false;
     }
-    if (gap_mode == 1) {
-      last_sec_v = last_sec_v_1;
-    } else if (gap_mode == 2) {
-      last_sec_v = last_sec_v_2;
-    } else if (gap_mode == 5) {
-      last_sec_v = last_sec_v_5;
-    }
-    char last_sec = std::to_string(time.sec).back();
-    if (check_sync && (int)(time.nanosec / 1e8) != 0) {
+    double current_time = time.sec + time.nanosec * 1e-9;
+    double last_time = last_timestamp * 1e-9;
+    if (current_time - last_time < gap_mode) {
       return true;
     }
-    return std::find(last_sec_v.begin(), last_sec_v.end(), last_sec) == last_sec_v.end();
+    return check_sync && ((time.nanosec / 1000000) % 100 != 0);
   }
 
   void image_callback(sensor_msgs::msg::Image::SharedPtr msg) {
-    static uint64_t last_timestamp;
+    static uint64_t last_timestamp, last_save_timestamp;
     static uint64_t lost_cnt;
     auto now = this->now().seconds();
     uint64_t timestamp = msg->header.stamp.sec * 1e9 + msg->header.stamp.nanosec;
@@ -460,10 +452,6 @@ class ROS2DataCollection : public rclcpp::Node {
       status_image_pub_->publish(*dst);
     }
 
-    if (is_gap(msg->header.stamp, image_gap_mode_, check_camera_sync_)) {
-      return;
-    }
-
     if (last_timestamp != 0) {
       double diff = (timestamp - last_timestamp) * 1e-9;
       if (diff < 0) {
@@ -482,8 +470,13 @@ class ROS2DataCollection : public rclcpp::Node {
         RCLCPP_ERROR_STREAM(this->get_logger(), log_string);
       }
     }
-
     last_timestamp = timestamp;
+
+    if (is_gap(msg->header.stamp, image_gap_mode_, last_save_timestamp, check_camera_sync_)) {
+      return;
+    }
+
+    last_save_timestamp = timestamp;
 
     if (!is_paused_) {
       int sz = image_que_.put(msg);
@@ -504,17 +497,13 @@ class ROS2DataCollection : public rclcpp::Node {
   }
 
   void pcd_callback(sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-    static uint64_t last_timestamp;
+    static uint64_t last_timestamp, last_save_timestamp;
     static uint64_t lost_cnt;
     auto now = this->now().seconds();
     uint64_t timestamp = msg->header.stamp.sec * 1e9 + msg->header.stamp.nanosec;
     last_get_pcd_time_ = msg->header.stamp.sec;
     std::stringstream stringstream;
     std::string log_string;
-
-    if (is_gap(msg->header.stamp, lidar_gap_mode_)) {
-      return;
-    }
 
     RCLCPP_INFO(this->get_logger(),
                 "get pcd at %fs, msg ts is: %fs, diff: %fms",
@@ -542,6 +531,11 @@ class ROS2DataCollection : public rclcpp::Node {
       }
     }
     last_timestamp = timestamp;
+
+    if (is_gap(msg->header.stamp, lidar_gap_mode_, last_save_timestamp)) {
+      return;
+    }
+    last_save_timestamp = timestamp;
 
     if (!is_paused_) {
       int sz = pcd_que_.put(msg);
