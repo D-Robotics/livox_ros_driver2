@@ -12,7 +12,18 @@ import numpy as np
 import cv2
 import yaml
 import shutil
+import math
 from tqdm import tqdm
+
+
+def get_fov(target_width, target_height, camera_fx, camera_fy):
+    h = 2 * math.atan2(target_width, 2 * camera_fx) * 180.0 / math.pi
+    v = 2 * math.atan2(target_height, 2 * camera_fy) * 180.0 / math.pi
+    d = 2 * math.atan2(
+        math.sqrt(target_width * target_width + target_height * target_height),
+        2 * math.sqrt(camera_fx * camera_fy)
+    ) * 180.0 / math.pi
+    return h, v, d
 
 def load_yaml_calib(yaml_path):
     with open(yaml_path, 'r') as f:
@@ -103,6 +114,8 @@ def build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
     camera_cx = -Q[0, 3]
     camera_cy = -Q[1, 3]
     base_line = abs(1 / Q[3, 2])
+    h, v, d = get_fov(target_image_size[0], target_image_size[1], camera_fx, camera_fy)
+    print(f'fov [h, v, d]: [{h}, {v}, {d}]')
     print('# fx fy cx cy baseline(m)')
     print(f'{camera_fx:.6f} {camera_fy:.6f} {camera_cx:.6f} {camera_cy:.6f} {base_line:.6f}')
     with open(out_dir + '/camera_intrinsic.txt', 'w', encoding='utf-8') as f:
