@@ -271,6 +271,11 @@ class ROS2DataCollection : public rclcpp::Node {
           if (c == '\n') {
             is_paused_ = !is_paused_;
           }
+          if (is_paused_) {
+            std::cout << "\rdata saving stop!!!                        " << std::flush;
+          } else {
+            std::cout << "\rdata saving starts!!!                        " << std::flush;
+          }
         }
         RCLCPP_WARN(this->get_logger(), "get_pause_func exit.");
       };
