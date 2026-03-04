@@ -112,6 +112,7 @@ class ROS2DataCollection : public rclcpp::Node {
     std::string imu_topic = this->declare_parameter("imu_topic", "/livox/imu");;
     std::string lidar_topic = this->declare_parameter("lidar_topic", "/livox/lidar");;
     std::string image_topic = this->declare_parameter("image_topic", "/image_combine_raw");;
+    image_format_ = this->declare_parameter("image_format", "png");;
     int save_thread_num = this->declare_parameter("save_thread_num", 4);;
     snap_shot_ = this->declare_parameter("snap_shot", snap_shot_);
     gravity_ = this->declare_parameter("gravity", gravity_);
@@ -162,10 +163,10 @@ class ROS2DataCollection : public rclcpp::Node {
                 "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
                 "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
                 "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
-                "check_camera_sync: %d.",
+                "check_camera_sync: %d, image_format: %d.",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
                 snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver, enable_pause,
-                motion_detect_, motion_window_size, a_th, w_th, check_camera_sync_);
+                motion_detect_, motion_window_size, a_th, w_th, check_camera_sync_, image_format_);
 
     imu_filename_ = imu_dir_ + "/imu_data.txt";
     imu_file_.open(imu_filename_, std::ios::out | std::ios::app);
@@ -306,6 +307,7 @@ class ROS2DataCollection : public rclcpp::Node {
  private:
   std::string data_dir_, imu_dir_, image_dir_, pcd_dir_;
   std::string imu_filename_;
+  std::string image_format_;
   std::ofstream imu_file_;
   std::ofstream log_file_;
   std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0};
@@ -407,7 +409,8 @@ class ROS2DataCollection : public rclcpp::Node {
     if (status_image_pub_->get_subscription_count() > 0) {
       int baseline = 0;
       cv::Point org = cv::Point(40, 120);
-      std::string show_text = "OK,image:" + std::to_string(image_save_cnt_) + ",pcd:" + std::to_string(pcd_save_cnt_);
+      //std::string show_text = "OK,image:" + std::to_string(image_save_cnt_) + ",pcd:" + std::to_string(pcd_save_cnt_);
+      std::string show_text = "OK";
       auto dst = std::make_shared<sensor_msgs::msg::Image>(*msg);
       cv::Mat nv12_img = cv::Mat(dst->height, dst->width, CV_8UC1, dst->data.data());
       if (std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3) {
@@ -559,21 +562,22 @@ class ROS2DataCollection : public rclcpp::Node {
   }
 
   void save_image(int64_t timestamp, const sensor_msgs::msg::Image::SharedPtr msg) {
-    std::string filename = image_dir_ + "/" + std::to_string(timestamp) + ".yuv";
-    std::ofstream file(filename, std::ios::out | std::ios::binary);
-    if (file.is_open()) {
-      file.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
-      file.close();
-      image_save_cnt_++;
+    if (image_format_ == "yuv") {
+      std::string filename = image_dir_ + "/" + std::to_string(timestamp) + ".yuv";
+      std::ofstream file(filename, std::ios::out | std::ios::binary);
+      if (file.is_open()) {
+        file.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
+        file.close();
+      } else {
+        RCLCPP_ERROR_STREAM(this->get_logger(), "cannot save: " << filename);
+      }
     } else {
-      RCLCPP_ERROR_STREAM(this->get_logger(), "cannot save: " << filename);
-    }
-    if (snap_shot_) {
       cv::Mat nv12(msg->height * 3 / 2, msg->width, CV_8UC1, msg->data.data());
       cv::Mat bgr;
       cv::cvtColor(nv12, bgr, cv::COLOR_YUV2BGR_NV12);
       cv::imwrite(image_dir_ + "/" + std::to_string(timestamp) + ".png", bgr);
     }
+    image_save_cnt_++;
   }
 
   void save_pcd(int64_t timestamp, const sensor_msgs::msg::PointCloud2::SharedPtr msg) {

@@ -14,7 +14,16 @@ import yaml
 import shutil
 import math
 from tqdm import tqdm
+import json
+import struct
+from datetime import datetime, timezone
+from pathlib import Path
 
+def get_isoformat_time_by_nanosecond(timestamp):
+    return datetime.fromtimestamp(timestamp / 1_000_000_000).isoformat(sep='_').replace(':', '-')
+
+def get_isoformat_T_time_by_nanosecond(timestamp):
+    return datetime.fromtimestamp(timestamp / 1_000_000_000).isoformat(sep='T')
 
 def get_fov(target_width, target_height, camera_fx, camera_fy):
     h = 2 * math.atan2(target_width, 2 * camera_fx) * 180.0 / math.pi
@@ -121,7 +130,7 @@ def build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
     with open(out_dir + '/camera_intrinsic.txt', 'w', encoding='utf-8') as f:
         f.write('# fx fy cx cy baseline(m)\n')
         f.write(f'{camera_fx:.6f} {camera_fy:.6f} {camera_cx:.6f} {camera_cy:.6f} {base_line:.6f}')
-    return (map1x, map1y), (map2x, map2y)
+    return (map1x, map1y), (map2x, map2y), (camera_fx, camera_fy, base_line)
 
 
 def nv12_to_bgr(nv12_bytes, w, h):
@@ -146,18 +155,22 @@ def read_nv12_vstack(path, w, h):
 
 
 def rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, out_prefix,
-                     stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num):
+                     stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num, enable_view):
     (map1x, map1y) = maps_left
     (map2x, map2y) = maps_right
-    rect_l = cv2.remap(left_bgr, map1x, map1y, interpolation=cv2.INTER_LINEAR)
-    rect_r = cv2.remap(right_bgr, map2x, map2y, interpolation=cv2.INTER_LINEAR)
-    save_bgr(rect_l, rect_r, out_prefix, stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
-    #print(f'[OK] {out_prefix}')
+    rect_l = cv2.remap(left_bgr, map1x, map1y, interpolation=cv2.INTER_AREA)
+    rect_r = cv2.remap(right_bgr, map2x, map2y, interpolation=cv2.INTER_AREA)
+    if enable_view:
+        small = cv2.resize(np.hstack((left_bgr, right_bgr)), None, fx=0.5, fy=0.5,
+                           interpolation=cv2.INTER_AREA)
+        cv2.imshow("stereo", small)
+        cv2.waitKey(10)
+    else:
+        save_bgr_json(rect_l, rect_r, out_prefix, stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
 
 
 def save_bgr(left_bgr, right_bgr, out_prefix, stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num):
     combine = np.vstack((left_bgr, right_bgr))
-
     cv2.imwrite(os.path.join(stereo_dir, f'left{num:06d}.png'), left_bgr)
     cv2.imwrite(os.path.join(stereo_dir, f'right{num:06d}.png'), right_bgr)
 
@@ -166,6 +179,10 @@ def save_bgr(left_bgr, right_bgr, out_prefix, stereo_dir, cam0_dir, cam1_dir, ca
     cv2.imwrite(os.path.join(cam_combine_dir, f'{out_prefix}.png'), combine)
     #print(f'[OK] {out_prefix}')
 
+def save_bgr_json(left_bgr, right_bgr, out_prefix, stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num):
+    combine = np.vstack((left_bgr, right_bgr))
+    cv2.imwrite(os.path.join(cam_combine_dir,
+                             get_isoformat_time_by_nanosecond(int(out_prefix)) + '.png'), combine)
 
 def save_pcd(image_path, pcd_seq_dir, pcd_ts_dir, num):
     ts = os.path.splitext(os.path.basename(image_path))[0]
@@ -184,22 +201,40 @@ def save_pcd(image_path, pcd_seq_dir, pcd_ts_dir, num):
         print(f'[FATAL] {pcd_file} is not exist!!')
         return False
 
+def create_json_entry(timestamp, width, height, fx, fy, bl):
+    entry = {
+        "filename": get_isoformat_time_by_nanosecond(timestamp) + ".png",
+        "width": width,
+        "height": height,
+        "capture_timestamp": get_isoformat_T_time_by_nanosecond(timestamp),
+        "latitude": None,
+        "longitude": None,
+        "trigger_reason": "timer",
+        "camera_mode": "day",
+        "camera_parameters": {
+            "fx": fx,
+            "fy": fy,
+            "base_line_m": bl
+        }
+    }
+    return entry
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--yaml', required=False, help='calibration yaml path')
     ap.add_argument('--input_dir', required=True, help='folder with NV12 files')
     ap.add_argument('--out_dir', required=True, help='output folder for PNG')
-    ap.add_argument('--size', required=False, help='size of the image')
+    ap.add_argument('--target_size', required=False, help='target size of the image for rectification')
     ap.add_argument('--sync_with_pcd', required=False, help='if true, images have no corresponding pcd will be discarded')
+    ap.add_argument('--enable_view', required=False, help='show stereo images')
 
     args = ap.parse_args()
 
     target_image_size = [1280, 1088]
     sync_with_pcd = False
 
-    if args.size is not None:
-        target_image_size = tuple(int(x) for x in args.size.split('x'))
+    if args.target_size is not None:
+        target_image_size = tuple(int(x) for x in args.target_size.split('x'))
 
     if args.sync_with_pcd is not None and args.sync_with_pcd is True:
         sync_with_pcd = True
@@ -210,6 +245,8 @@ def main():
     cam1_dir = os.path.join(out_dir, 'stereo_ts/cam1/data/')
     cam_combine_dir = os.path.join(out_dir, 'stereo_ts/cam_combine/data/')
 
+    enable_view = args.enable_view
+    video = None
     os.makedirs(stereo_dir, exist_ok=True)
     os.makedirs(cam0_dir, exist_ok=True)
     os.makedirs(cam1_dir, exist_ok=True)
@@ -223,13 +260,13 @@ def main():
     num = 1
 
     files = sorted(glob.glob(os.path.join(args.input_dir, '**', '*.yuv'), recursive=True))
-
+    failed_count = 0
     if args.yaml is not None:
         K0, D0, K1, D1, size, R, t, model, fov_scale = load_yaml_calib(args.yaml)
-        maps_left, maps_right = build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
+        maps_left, maps_right, (fx, fy, bl) = build_rectify_maps(K0, D0, K1, D1, size, target_image_size, R, t, model,
                                                    balance=0.0, fov_scale=fov_scale, out_dir=out_dir)
         w, h = size
-
+        json_entries = []
         for p in tqdm(files, desc="Processing YUV files"):
             prefix = os.path.splitext(os.path.basename(p))[0]
 
@@ -239,11 +276,25 @@ def main():
                 left_bgr, right_bgr = read_nv12_vstack(p, w, h)
                 rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, prefix,
                                  stereo_dir, cam0_dir, cam1_dir, cam_combine_dir,
-                                 num)
+                                 num, enable_view)
+
+                entry = create_json_entry(int(prefix), target_image_size[0], target_image_size[1] * 2, fx, fy, bl)
+                json_entries.append(entry)
             except Exception as e:
-                print(f"error: {type(e).__name__}: {e}")
+                failed_count = failed_count + 1
+                print(f"error: {type(e).__name__}: {e}, filename: {p}, failed count: {failed_count}")
 
             num = num + 1
+
+        json_result = {
+            "generated_timestamp": datetime.now().isoformat(),
+            "data": json_entries
+        }
+
+        json_file = os.path.join(cam_combine_dir, '../metadata.json')
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(json_result, f, indent=2, ensure_ascii=False)
+            print("json has been save to: ", json_file)
     else:
         w, h = target_image_size
         for p in tqdm(files, desc="Processing YUV files"):
@@ -254,10 +305,22 @@ def main():
                 continue
             try:
                 left_bgr, right_bgr = read_nv12_vstack(p, w, h)
-                save_bgr(left_bgr, right_bgr, prefix,
-                         stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
+                if enable_view:
+                    small = cv2.resize(np.hstack((left_bgr, right_bgr)), None, fx=0.5, fy=0.5,
+                                       interpolation=cv2.INTER_AREA)
+                    cv2.imshow("stereo", small)
+                    cv2.waitKey(10)
+                    if video is None:
+                        height, width, channels = small.shape
+                        fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for .mp4
+                        video = cv2.VideoWriter('output_video.mp4', fourcc, 10, (width, height))
+                    video.write(small)
+                else:
+                    save_bgr(left_bgr, right_bgr, prefix,
+                             stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num)
             except Exception as e:
-                print(f"error: {type(e).__name__}: {e}")
+                failed_count = failed_count + 1
+                print(f"error: {type(e).__name__}: {e}, filename: {p}, failed count: {failed_count}")
             num = num + 1
 
     print('[DONE]')
