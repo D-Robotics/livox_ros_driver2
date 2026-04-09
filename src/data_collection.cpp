@@ -120,6 +120,7 @@ class ROS2DataCollection : public rclcpp::Node {
     lidar_gap_mode_ = this->declare_parameter("lidar_gap_mode", lidar_gap_mode_);
     motion_detect_ = this->declare_parameter("motion_detect", motion_detect_);
     check_camera_sync_ = this->declare_parameter("check_camera_sync", check_camera_sync_);
+    check_lidar_exist_ = this->declare_parameter("check_lidar_exist", check_lidar_exist_);
     int motion_window_size = this->declare_parameter("motion_window_size", 200);
     bool check_is_external_driver = this->declare_parameter("check_ext_driver", false);
     bool enable_pause = this->declare_parameter("enable_pause", true);
@@ -163,7 +164,7 @@ class ROS2DataCollection : public rclcpp::Node {
                 "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
                 "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
                 "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
-                "check_camera_sync: %d, image_format: %s.",
+                "check_camera_sync: %d, image_format: %s, .",
                 data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
                 snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver, enable_pause,
                 motion_detect_, motion_window_size, a_th, w_th, check_camera_sync_, image_format_.c_str());
@@ -312,7 +313,7 @@ class ROS2DataCollection : public rclcpp::Node {
   std::ofstream log_file_;
   std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0};
   float gravity_ = 9.81;
-  bool snap_shot_{false}, motion_detect_ {false}, check_camera_sync_{true};
+  bool snap_shot_{false}, motion_detect_ {false}, check_camera_sync_{true}, check_lidar_exist_{true};
   int image_gap_mode_ = 0;
   int lidar_gap_mode_ = 0;
   double get_shot_time_;
@@ -413,7 +414,8 @@ class ROS2DataCollection : public rclcpp::Node {
       std::string show_text = "OK";
       auto dst = std::make_shared<sensor_msgs::msg::Image>(*msg);
       cv::Mat nv12_img = cv::Mat(dst->height, dst->width, CV_8UC1, dst->data.data());
-      if (std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3) {
+      if (check_lidar_exist_ &&
+          std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3) {
         //  no Lidar msg received
         show_text = "NO LeiDa";
       } else if ((dst->header.stamp.nanosec / 1000000) % 100 != 0) {
