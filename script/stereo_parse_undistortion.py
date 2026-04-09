@@ -153,6 +153,11 @@ def read_nv12_vstack(path, w, h):
     bgr = nv12_to_bgr(raw, W, H)
     return bgr[:h, :, :].copy(), bgr[h:, :, :].copy()
 
+def read_png_vstack(path):
+    combined_img = cv2.imread(path)
+    height, width = combined_img.shape[:2]
+    mid_point = height // 2
+    return combined_img[:mid_point, :].copy(), combined_img[mid_point:, :].copy()
 
 def rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, out_prefix,
                      stereo_dir, cam0_dir, cam1_dir, cam_combine_dir, num, enable_view):
@@ -189,16 +194,19 @@ def save_pcd(image_path, pcd_seq_dir, pcd_ts_dir, num):
     parent_dir = os.path.dirname(os.path.dirname(image_path))
     pcd_dir = os.path.join(parent_dir, "pcd")
     pcd_file = os.path.join(pcd_dir, ts + ".pcd")
-
-    if os.path.exists(pcd_file):
-        dst_pcd_seq_file = os.path.join(pcd_seq_dir, f'pcd{num:06d}.pcd')
-        dst_pcd_ts_file = os.path.join(pcd_ts_dir, ts + ".pcd")
-        shutil.copy(pcd_file, dst_pcd_seq_file)
-        shutil.copy(pcd_file, dst_pcd_ts_file)
-        print(f'[OK] {pcd_file} {dst_pcd_seq_file} {dst_pcd_ts_file}')
-        return True
-    else:
-        print(f'[FATAL] {pcd_file} is not exist!!')
+    try:
+        if os.path.exists(pcd_file):
+            dst_pcd_seq_file = os.path.join(pcd_seq_dir, f'pcd{num:06d}.pcd')
+            dst_pcd_ts_file = os.path.join(pcd_ts_dir, ts + ".pcd")
+            shutil.copy(pcd_file, dst_pcd_seq_file)
+            shutil.copy(pcd_file, dst_pcd_ts_file)
+            print(f'[OK] {pcd_file} {dst_pcd_seq_file} {dst_pcd_ts_file}')
+            return True
+        else:
+            print(f'[FATAL] {pcd_file} is not exist!!')
+            return False
+    except Exception as e:
+        print(f"error: {type(e).__name__}: {e}, filename: {pcd_dir}")
         return False
 
 def create_json_entry(timestamp, width, height, fx, fy, bl):
@@ -259,7 +267,9 @@ def main():
 
     num = 1
 
-    files = sorted(glob.glob(os.path.join(args.input_dir, '**', '*.yuv'), recursive=True))
+    yuv_files = glob.glob(os.path.join(args.input_dir, '**', '*.yuv'), recursive=True)
+    png_files = glob.glob(os.path.join(args.input_dir, '**', '*.png'), recursive=True)
+    files = sorted(yuv_files + png_files)
     failed_count = 0
     if args.yaml is not None:
         K0, D0, K1, D1, size, R, t, model, fov_scale = load_yaml_calib(args.yaml)
@@ -267,13 +277,19 @@ def main():
                                                    balance=0.0, fov_scale=fov_scale, out_dir=out_dir)
         w, h = size
         json_entries = []
-        for p in tqdm(files, desc="Processing YUV files"):
+        for p in tqdm(files, desc="Processing image files"):
             prefix = os.path.splitext(os.path.basename(p))[0]
-
+            postfix = os.path.splitext(os.path.basename(p))[1]
             if sync_with_pcd and save_pcd(p, pcd_seq_dir, pcd_ts_dir, num) == False :
                 continue
             try:
-                left_bgr, right_bgr = read_nv12_vstack(p, w, h)
+                if postfix == '.yuv':
+                    left_bgr, right_bgr = read_nv12_vstack(p, w, h)
+                elif postfix == '.png':
+                    left_bgr, right_bgr = read_png_vstack(p)
+                else:
+                    print("unknown postfix of the file: ", os.path.basename(p))
+                    continue
                 rectify_and_save(left_bgr, right_bgr, maps_left, maps_right, prefix,
                                  stereo_dir, cam0_dir, cam1_dir, cam_combine_dir,
                                  num, enable_view)
@@ -297,14 +313,22 @@ def main():
             print("json has been save to: ", json_file)
     else:
         w, h = target_image_size
-        for p in tqdm(files, desc="Processing YUV files"):
+        for p in tqdm(files, desc="Processing image files"):
             prefix = os.path.splitext(os.path.basename(p))[0]
+            postfix = os.path.splitext(os.path.basename(p))[1]
+
             #print("prefix:", prefix)
 
             if sync_with_pcd and save_pcd(p, pcd_seq_dir, pcd_ts_dir, num) == False :
                 continue
             try:
-                left_bgr, right_bgr = read_nv12_vstack(p, w, h)
+                if postfix == '.yuv':
+                    left_bgr, right_bgr = read_nv12_vstack(p, w, h)
+                elif postfix == '.png':
+                    left_bgr, right_bgr = read_png_vstack(p)
+                else:
+                    print("unknown postfix of the file: ", os.path.basename(p))
+                    continue
                 if enable_view:
                     small = cv2.resize(np.hstack((left_bgr, right_bgr)), None, fx=0.5, fy=0.5,
                                        interpolation=cv2.INTER_AREA)
