@@ -443,7 +443,8 @@ class ROS2DataCollection : public rclcpp::Node {
           std::abs(dst->header.stamp.sec - last_get_pcd_time_.load()) > 3) {
         //  no Lidar msg received
         show_text = "NO LeiDa";
-      } else if ((dst->header.stamp.nanosec / 1000000) % 100 != 0) {
+      } else if (check_camera_sync_ &&
+                (dst->header.stamp.nanosec / 1000000) % 100 != 0) {
         //  camera is not sync
         show_text = "NO Tongbu";
       } else if (motion_detect_) {
