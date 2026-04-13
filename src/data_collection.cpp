@@ -126,6 +126,7 @@ class ROS2DataCollection : public rclcpp::Node {
     bool enable_pause = this->declare_parameter("enable_pause", true);
     double a_th = this->declare_parameter("motion_accel_th", 1.1);
     double w_th = this->declare_parameter("motion_gyro_th", 0.0);
+    std::string calib_file = this->declare_parameter("calib_file", "");
 
     if (motion_detect_) {
       motion_detector_ = std::make_shared<MotionDetector>(motion_window_size, a_th, w_th);
@@ -139,6 +140,23 @@ class ROS2DataCollection : public rclcpp::Node {
     system(("mkdir -p " + image_dir_).c_str());
     system(("mkdir -p " + pcd_dir_).c_str());
     system(("mkdir -p " + imu_dir_).c_str());
+
+    char log_buffer[4096];
+    snprintf(log_buffer, sizeof(log_buffer),
+             "data_dir: %s\n"
+             "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
+             "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
+             "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
+             "check_camera_sync: %d, image_format: %s, calib_file: %s ",
+             data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
+             snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver,
+             enable_pause, motion_detect_, motion_window_size, a_th, w_th,
+             check_camera_sync_, image_format_.c_str(), calib_file.c_str()
+    );
+    std::string log_str(log_buffer);
+    generate_device_info( calib_file, log_str);
+    RCLCPP_WARN(this->get_logger(), "%s .", log_buffer);
+
     float capacity;
     float space_ratio = 1 - get_free_space(home_dir, capacity);
     if (check_is_external_driver) {
@@ -158,16 +176,6 @@ class ROS2DataCollection : public rclcpp::Node {
                 << "The disk of dir: '" << home_dir << "' is now at: "
                 << space_ratio * 100 << "% usage" << std::endl;
     }
-
-    RCLCPP_WARN(this->get_logger(),
-                "data_dir: %s\n"
-                "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
-                "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
-                "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
-                "check_camera_sync: %d, image_format: %s, .",
-                data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
-                snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver, enable_pause,
-                motion_detect_, motion_window_size, a_th, w_th, check_camera_sync_, image_format_.c_str());
 
     imu_filename_ = imu_dir_ + "/imu_data.txt";
     imu_file_.open(imu_filename_, std::ios::out | std::ios::app);
@@ -339,7 +347,7 @@ class ROS2DataCollection : public rclcpp::Node {
       if (si.capacity == 0) {
         return 0.0;
       }
-      std::cout << "Path:  " << path << " space situation: " << std::endl;
+      std::cout << "Path:  '" << path << "' space situation: " << std::endl;
       std::cout << "Capacity:  " << si.capacity / 1024 / 1024 / 1024 << " GB\n";
       capacity = si.capacity / 1024 / 1024 / 1024;
       std::cout << "Free:      " << si.free / 1024 / 1024 / 1024 << " GB\n";
@@ -360,6 +368,23 @@ class ROS2DataCollection : public rclcpp::Node {
     oss << std::put_time(&tm, "%Y-%m-%d-%H.%M.%S");
 
     return std::string( + "/ros2_data/" + oss.str());
+  }
+
+  void generate_device_info(const std::string &calib_file, const std::string &log_str) {
+    const std::string device_info_file = data_dir_ + "/device.info";
+    const std::string generate_cmd =
+        R"SH(printf "ip: %s\nuname: %s\n" "$(ifconfig eth0 | grep 'inet ' | awk '{print $2}')" "$(uname -a)" > )SH"
+        + device_info_file + "; sync;";
+    std::cout << "generate device info cmd: \n" << generate_cmd << std::endl;
+    system(generate_cmd.c_str());
+    std::ofstream device_info_file_strem(device_info_file, std::ios::app);
+    device_info_file_strem << "parameters:" << std::endl << log_str << std::endl;
+    device_info_file_strem.close();
+
+    if (!calib_file.empty() && std::filesystem::is_regular_file(calib_file)) {
+      std::filesystem::path dst_path = std::filesystem::path(data_dir_) / std::filesystem::path(calib_file).filename();
+      std::filesystem::copy_file(calib_file, dst_path, std::filesystem::copy_options::overwrite_existing);
+    }
   }
 
   void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg) {
