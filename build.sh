@@ -3,20 +3,24 @@
 readonly VERSION_ROS1="ROS1"
 readonly VERSION_ROS2="ROS2"
 readonly VERSION_HUMBLE="humble"
+readonly VERSION_JAZZY="jazzy"
 
 pushd `pwd` > /dev/null
 cd `dirname $0`
 echo "Working Path: "`pwd`
 
 ROS_VERSION=""
-ROS_HUMBLE=""
+ROS_DISTRO=""
 
 # Set working ROS version
 if [ "$1" = "ROS2" ]; then
     ROS_VERSION=${VERSION_ROS2}
 elif [ "$1" = "humble" ]; then
     ROS_VERSION=${VERSION_ROS2}
-    ROS_HUMBLE=${VERSION_HUMBLE}
+    ROS_DISTRO=${VERSION_HUMBLE}
+elif [ "$1" = "jazzy" ]; then
+    ROS_VERSION=${VERSION_ROS2}
+    ROS_DISTRO=${VERSION_JAZZY}
 elif [ "$1" = "ROS1" ]; then
     ROS_VERSION=${VERSION_ROS1}
 else
