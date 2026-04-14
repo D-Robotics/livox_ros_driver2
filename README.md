@@ -6,6 +6,80 @@ Livox ROS Driver 2 is the 2nd-generation driver package used to connect LiDAR pr
 
   As a debugging tool, Livox ROS Driver is not recommended for mass production but limited to test scenarios. You should optimize the code based on the original source to meet your various needs.
 
+# 0. 使用交叉编译环境编译
+
+- 编译指令
+
+```bash
+# 创建package.xml软链接指向package_ROS2.xml
+cd /livox_ros_driver2
+ln -sf ./package_ROS2.xml ./package.xml
+# 交叉编译
+cd tros_ws
+rm -rfv ./install/lib/livox_ros_driver2
+rm -rfv ./install/share/livox_ros_driver2
+bash ./robot_dev_config/build.sh -p X5 -s livox_ros_driver2
+```
+
+- 正常启动会打印的日志，livox/imu和livox/lidar两个topic会发布
+
+```bash
+ros2 launch livox_ros_driver2 msg_MID360s_launch.py
+[INFO] [launch]: All log files can be found below /root/.ros/log/1970-01-01-00-54-39-748278-buildroot-1318
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [livox_ros_driver2_node-1]: process started with pid [1319]
+[livox_ros_driver2_node-1] [INFO] [0000003280.504228897] [livox_lidar_publisher]: Livox Ros Driver2 Version: 1.2.5
+[livox_ros_driver2_node-1] [INFO] [0000003280.505780272] [livox_lidar_publisher]: Data Source is raw lidar.
+[livox_ros_driver2_node-1] [INFO] [0000003280.505884439] [livox_lidar_publisher]: Config file : /userdata/zhikang.zeng/work_humble_ws_x5/tros_ws/install/share/livox_ros_driver2/launch_ROS2/../config/MID360s_config.json
+[livox_ros_driver2_node-1] LdsLidar *GetInstance
+[livox_ros_driver2_node-1] config lidar type: 8
+[livox_ros_driver2_node-1] successfully parse base config, counts: 1
+[livox_ros_driver2_node-1] [INFO] [0000003280.546724397] [livox_lidar_publisher]: Init lds lidar success!
+[livox_ros_driver2_node-1] GetFreeIndex key:livox_lidar_1335128074.
+[livox_ros_driver2_node-1] Init queue, real query size:16.
+[livox_ros_driver2_node-1] Lidar[0] storage queue size: 10
+[livox_ros_driver2_node-1] set pcl data type, handle: 1335128074, data type: 1
+[livox_ros_driver2_node-1] set scan pattern, handle: 1335128074, scan pattern: 0
+[livox_ros_driver2_node-1] begin to change work mode to 'Normal', handle: 1335128074
+[livox_ros_driver2_node-1] successfully set data type, handle: 1335128074, set_bit: 2
+[livox_ros_driver2_node-1] successfully set pattern mode, handle: 1335128074, set_bit: 0
+[livox_ros_driver2_node-1] successfully set lidar attitude, ip: 10.112.148.79
+[livox_ros_driver2_node-1] successfully change work mode, handle: 1335128074
+[livox_ros_driver2_node-1] successfully enable Livox Lidar imu, ip: 10.112.148.79
+[livox_ros_driver2_node-1] [INFO] [0000003283.548023732] [livox_lidar_publisher]: livox/imu publish use imu format
+[livox_ros_driver2_node-1] [INFO] [0000003283.590683065] [livox_lidar_publisher]: livox/lidar publish use PointCloud2 format
+```
+
+- 确认是否有雷达和IMU数据，根据./config/MID360s_config.json配置文件，56301是雷达数据端口，56401是imu数据端口，如果连接eth0网卡，则可以抓包到数据
+
+```bash
+timeout 0.2s tcpdump -i eth0 udp port 56301
+timeout 0.2s tcpdump -i eth0 udp port 56401
+```
+
+```bash
+root@buildroot:/userdata# timeout 0.15s tcpdump -i eth0 udp port 56301
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+00:59:54.711091 IP 10.112.148.79.56300 > 10.112.148.77.56301: UDP, length 1380
+00:59:54.711317 IP 10.112.148.79.56300 > 10.112.148.77.56301: UDP, length 1380
+00:59:54.711547 IP 10.112.148.79.56300 > 10.112.148.77.56301: UDP, length 1380
+
+41 packets captured
+121 packets received by filter
+0 packets dropped by kernel
+root@buildroot:/userdata# timeout 0.15s tcpdump -i eth0 udp port 56401
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+00:59:58.104188 IP 10.112.148.79.56400 > 10.112.148.77.56401: UDP, length 60
+00:59:58.109857 IP 10.112.148.79.56400 > 10.112.148.77.56401: UDP, length 60
+00:59:58.113990 IP 10.112.148.79.56400 > 10.112.148.77.56401: UDP, length 60
+
+8 packets captured
+20 packets received by filter
+0 packets dropped by kernel
+```
+
 ## 1. Preparation
 
 ### 1.1 OS requirements
@@ -329,6 +403,189 @@ For more infomation about the HAP config, please refer to:
     }
   ]
 }
+```
+3. when multiple nics on the host connect to multiple LiDARs, you need to add objects corresponding to different LiDARs to the lidar_configs array. Run different luanch files separately, and the following is an example of mixing lidar configuration file contents:
+
+**MID360_config1:**
+```json
+{
+  "lidar_summary_info" : {
+    "lidar_type": 8  # protocol type index，please don't revise this value
+  },
+    "MID360": {
+        "lidar_net_info": {
+            "cmd_data_port": 56100, # command port
+            "push_msg_port": 56200, 
+            "point_data_port": 56300,
+            "imu_data_port": 56400,
+            "log_data_port": 56500
+        },
+        "host_net_info": [
+            {
+                "lidar_ip": ["192.168.1.100"], # Lidar ip
+                "host_ip": "192.168.1.5", # host ip
+                "cmd_data_port": 56101,
+                "push_msg_port": 56201,
+                "point_data_port": 56301,
+                "imu_data_port": 56401,
+                "log_data_port": 56501
+            }
+        ]
+    },
+    "lidar_configs": [
+        {
+            "ip": "192.168.1.100", # ip of the LiDAR you want to config
+            "pcl_data_type": 1,
+            "pattern_mode": 0,
+            "extrinsic_parameter": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        }
+    ]
+}
+```
+**MID360_config2:**
+```json
+{
+  "lidar_summary_info" : {
+    "lidar_type": 8  # protocol type index，please don't revise this value
+  },
+    "MID360": {
+        "lidar_net_info": {
+            "cmd_data_port": 56100, # command port
+            "push_msg_port": 56200, 
+            "point_data_port": 56300,
+            "imu_data_port": 56400,
+            "log_data_port": 56500
+        },
+        "host_net_info": [
+            {
+                "lidar_ip": ["192.168.2.100"], # Lidar ip
+                "host_ip": "192.168.2.5", # host ip
+                "cmd_data_port": 56101,
+                "push_msg_port": 56201,
+                "point_data_port": 56301,
+                "imu_data_port": 56401,
+                "log_data_port": 56501
+            }
+        ]
+    },
+    "lidar_configs": [
+        {
+            "ip": "192.168.2.100", # ip of the LiDAR you want to config
+            "pcl_data_type": 1,
+            "pattern_mode": 0,
+            "extrinsic_parameter": {
+                "roll": 0.0,
+                "pitch": 0.0,
+                "yaw": 0.0,
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        }
+    ]
+}
+```
+**Launch1:**
+```
+<launch>
+    <!--user configure parameters for ros start-->
+    <arg name="lvx_file_path" default="livox_test.lvx"/>
+    <arg name="bd_list" default="100000000000000"/>
+    <arg name="xfer_format" default="0"/>
+    <arg name="multi_topic" default="1"/>
+    <arg name="data_src" default="0"/>
+    <arg name="publish_freq" default="10.0"/>
+    <arg name="output_type" default="0"/>
+    <arg name="rviz_enable" default="true"/>
+    <arg name="rosbag_enable" default="false"/>
+    <arg name="cmdline_arg" default="$(arg bd_list)"/>
+    <arg name="msg_frame_id" default="livox_frame"/>
+    <arg name="lidar_bag" default="true"/>
+    <arg name="imu_bag" default="true"/>
+    <!--user configure parameters for ros end--> 
+
+    <param name="xfer_format" value="$(arg xfer_format)"/>
+    <param name="multi_topic" value="$(arg multi_topic)"/>
+    <param name="data_src" value="$(arg data_src)"/>
+    <param name="publish_freq" type="double" value="$(arg publish_freq)"/>
+    <param name="output_data_type" value="$(arg output_type)"/>
+    <param name="cmdline_str" type="string" value="$(arg bd_list)"/>
+    <param name="cmdline_file_path" type="string" value="$(arg lvx_file_path)"/>
+    <param name="user_config_path" type="string" value="$(find livox_ros_driver2)/config/MID360_config1.json"/> # Mid360 MID360_config1 name
+    <param name="frame_id" type="string" value="$(arg msg_frame_id)"/>
+    <param name="enable_lidar_bag" type="bool" value="$(arg lidar_bag)"/>
+    <param name="enable_imu_bag" type="bool" value="$(arg imu_bag)"/>
+
+    <node name="livox_lidar_publisher1" pkg="livox_ros_driver2"
+          type="livox_ros_driver2_node" required="true"
+          output="screen" args="$(arg cmdline_arg)"/>
+
+    <group if="$(arg rviz_enable)">
+        <node name="livox_rviz" pkg="rviz" type="rviz" respawn="true"
+                args="-d $(find livox_ros_driver2)/config/display_point_cloud_ROS1.rviz"/>
+    </group>
+
+    <group if="$(arg rosbag_enable)">
+        <node pkg="rosbag" type="record" name="record" output="screen"
+                args="-a"/>
+    </group>
+
+</launch>
+```
+**Launch2:**
+```
+<launch>
+    <!--user configure parameters for ros start-->
+    <arg name="lvx_file_path" default="livox_test.lvx"/>
+    <arg name="bd_list" default="100000000000000"/>
+    <arg name="xfer_format" default="0"/>
+    <arg name="multi_topic" default="1"/>
+    <arg name="data_src" default="0"/>
+    <arg name="publish_freq" default="10.0"/>
+    <arg name="output_type" default="0"/>
+    <arg name="rviz_enable" default="true"/>
+    <arg name="rosbag_enable" default="false"/>
+    <arg name="cmdline_arg" default="$(arg bd_list)"/>
+    <arg name="msg_frame_id" default="livox_frame"/>
+    <arg name="lidar_bag" default="true"/>
+    <arg name="imu_bag" default="true"/>
+    <!--user configure parameters for ros end--> 
+
+    <param name="xfer_format" value="$(arg xfer_format)"/>
+    <param name="multi_topic" value="$(arg multi_topic)"/>
+    <param name="data_src" value="$(arg data_src)"/>
+    <param name="publish_freq" type="double" value="$(arg publish_freq)"/>
+    <param name="output_data_type" value="$(arg output_type)"/>
+    <param name="cmdline_str" type="string" value="$(arg bd_list)"/>
+    <param name="cmdline_file_path" type="string" value="$(arg lvx_file_path)"/>
+    <param name="user_config_path" type="string" value="$(find livox_ros_driver2)/config/MID360_config2.json"/> # Mid360 MID360_config2 name
+    <param name="frame_id" type="string" value="$(arg msg_frame_id)"/>
+    <param name="enable_lidar_bag" type="bool" value="$(arg lidar_bag)"/>
+    <param name="enable_imu_bag" type="bool" value="$(arg imu_bag)"/>
+
+    <node name="livox_lidar_publisher2" pkg="livox_ros_driver2"
+          type="livox_ros_driver2_node" required="true"
+          output="screen" args="$(arg cmdline_arg)"/>
+
+    <group if="$(arg rviz_enable)">
+        <node name="livox_rviz" pkg="rviz" type="rviz" respawn="true"
+                args="-d $(find livox_ros_driver2)/config/display_point_cloud_ROS1.rviz"/>
+    </group>
+
+    <group if="$(arg rosbag_enable)">
+        <node pkg="rosbag" type="record" name="record" output="screen"
+                args="-a"/>
+    </group>
+
+</launch>
+
 ```
 
 ## 5. Supported LiDAR list

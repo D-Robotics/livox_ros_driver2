@@ -1,6 +1,5 @@
 .vscode
-build*
-cmake-build-debug
+build
+!Livox_SDK2/sdk_core/build/
 package.xml
-.idea
 __pycache__
