@@ -261,8 +261,8 @@ class ROS2DataCollection : public rclcpp::Node {
                 break;
               }
             }
-            RCLCPP_WARN(this->get_logger(), "we have saved %d images and %d pcds.",
-                        image_save_cnt_.load(), pcd_save_cnt_.load());
+            RCLCPP_WARN(this->get_logger(), "we have saved %d images and %d pcds, and %d imus.",
+                        image_save_cnt_.load(), pcd_save_cnt_.load(), imu_save_cnt_.load());
           }
         }
         RCLCPP_WARN(this->get_logger(), "snap_shot exit.");
@@ -312,8 +312,8 @@ class ROS2DataCollection : public rclcpp::Node {
     if (log_file_.is_open()) {
       log_file_.close();
     }
-    RCLCPP_WARN(this->get_logger(), "we have saved %d images and %d pcds.",
-                image_save_cnt_.load(), pcd_save_cnt_.load());
+    RCLCPP_WARN(this->get_logger(), "we have saved %d images and %d pcds, and %d imus.",
+                image_save_cnt_.load(), pcd_save_cnt_.load(), imu_save_cnt_.load());
   }
 
  private:
@@ -322,7 +322,7 @@ class ROS2DataCollection : public rclcpp::Node {
   std::string image_format_;
   std::ofstream imu_file_;
   std::ofstream log_file_;
-  std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0};
+  std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0}, imu_save_cnt_ {0};
   float gravity_ = 9.81;
   bool snap_shot_{false}, motion_detect_ {false}, check_camera_sync_{true}, check_lidar_exist_{true};
   int image_gap_mode_ = 0;
@@ -405,6 +405,7 @@ class ROS2DataCollection : public rclcpp::Node {
       motion_detector_->FeedImu(imu_data);
     }
     imu_file_.flush();
+    ++imu_save_cnt_;
   }
 
   static bool is_gap(const builtin_interfaces::msg::Time &time, int gap_mode,
@@ -668,8 +669,8 @@ class ROS2DataCollection : public rclcpp::Node {
         } else {
           save_image(timestamp, msg);
           std::cout << "\rwe have saved image: "
-                    << image_save_cnt_.load()
-                    << ", pcd: " << pcd_save_cnt_.load() << std::flush;
+                    << image_save_cnt_.load() << ", pcd: " << pcd_save_cnt_.load()
+                    << ", imu: " << imu_save_cnt_.load() << std::flush;
         }
       }
     }
