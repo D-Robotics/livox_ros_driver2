@@ -121,6 +121,7 @@ class ROS2DataCollection : public rclcpp::Node {
     motion_detect_ = this->declare_parameter("motion_detect", motion_detect_);
     check_camera_sync_ = this->declare_parameter("check_camera_sync", check_camera_sync_);
     check_lidar_exist_ = this->declare_parameter("check_lidar_exist", check_lidar_exist_);
+    save_pcd_bin_ = this->declare_parameter("save_pcd_bin", save_pcd_bin_.load());
     bool is_ir = this->declare_parameter("is_ir", false);
     int motion_window_size = this->declare_parameter("motion_window_size", 200);
     bool check_is_external_driver = this->declare_parameter("check_ext_driver", false);
@@ -150,10 +151,12 @@ class ROS2DataCollection : public rclcpp::Node {
              "imu_topic: %s, lidar_topic: %s, image_topic: %s\n"
              "snap_shot: %d, gravity_: %f, image_gap_mode: %d, lidar_gap_mode: %d, check_ext_driver: %d\n"
              "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
+             "save_pcd_bin: %d, is_ir: %d\n"
              "check_camera_sync: %d, image_format: %s, calib_file: %s ",
              data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
              snap_shot_, gravity_, image_gap_mode_, lidar_gap_mode_, check_is_external_driver,
              enable_pause, motion_detect_, motion_window_size, a_th, w_th,
+             save_pcd_bin_.load(), is_ir,
              check_camera_sync_, image_format_.c_str(), calib_file.c_str()
     );
     std::string log_str(log_buffer);
@@ -325,6 +328,7 @@ class ROS2DataCollection : public rclcpp::Node {
   std::atomic_uint32_t pcd_save_cnt_{0}, image_save_cnt_ {0}, imu_save_cnt_ {0};
   float gravity_ = 9.81;
   bool snap_shot_{false}, motion_detect_ {false}, check_camera_sync_{true}, check_lidar_exist_{true};
+  std::atomic_bool save_pcd_bin_ {false};
   int image_gap_mode_ = 0;
   int lidar_gap_mode_ = 0;
   double get_shot_time_;
@@ -613,36 +617,53 @@ class ROS2DataCollection : public rclcpp::Node {
   }
 
   void save_pcd(int64_t timestamp, const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    const int N = msg->width;
     std::string filename = pcd_dir_ + "/" + std::to_string(timestamp) + ".pcd";
-    std::ofstream file(filename);
+    std::ofstream file;
+    if (save_pcd_bin_) {
+      file = std::ofstream(filename, std::ios::binary);
+    } else {
+      file = std::ofstream(filename);
+    }
     if (!file.is_open()) return;
-
     file << "# .PCD v0.7 - Point Cloud Data file format\n"
          << "VERSION 0.7\n"
          << "FIELDS x y z intensity offset_time tag line\n"
          << "SIZE 4 4 4 4 4 1 1\n"
          << "TYPE F F F F U U U\n"
          << "COUNT 1 1 1 1 1 1 1\n"
-         << "WIDTH " << msg->width << "\n"
+         << "WIDTH " << N << "\n"
          << "HEIGHT 1\n"
          << "VIEWPOINT 0 0 0 1 0 0 0\n"
-         << "POINTS " << msg->width << "\n"
-         << "DATA ascii\n";
+         << "POINTS " << N << "\n";
 
-    sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
-    sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
-    sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
-    sensor_msgs::PointCloud2ConstIterator<float> iter_intensity(*msg, "intensity");
-    sensor_msgs::PointCloud2ConstIterator<uint8_t> iter_tag(*msg, "tag");
-    sensor_msgs::PointCloud2ConstIterator<uint8_t> iter_line(*msg, "line");
-    sensor_msgs::PointCloud2ConstIterator<uint32_t> iter_offset_time(*msg, "offset_time");
-
-    for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z,
-        ++iter_intensity, ++iter_tag, ++iter_line, ++iter_offset_time) {
-      file << *iter_x << " " << *iter_y << " " << *iter_z << " "
-           << *iter_intensity << " " << *iter_offset_time << " "
-           << (int)*iter_tag << " " << (int)*iter_line << std::endl;
+    if (msg->point_step != 22) {
+      std::cout << "point_step of pointcloud2 is " << msg->point_step
+                << ", rather than 22, so save pcd as asiic" << std::endl;
+      save_pcd_bin_ = false;
     }
+
+    if (save_pcd_bin_) {
+      file << "DATA binary\n";
+      file.write(reinterpret_cast<const char *>(msg->data.data()), N * 22);
+    } else {
+      file << "DATA ascii\n";
+      sensor_msgs::PointCloud2ConstIterator<float> iter_x(*msg, "x");
+      sensor_msgs::PointCloud2ConstIterator<float> iter_y(*msg, "y");
+      sensor_msgs::PointCloud2ConstIterator<float> iter_z(*msg, "z");
+      sensor_msgs::PointCloud2ConstIterator<float> iter_intensity(*msg, "intensity");
+      sensor_msgs::PointCloud2ConstIterator<uint8_t> iter_tag(*msg, "tag");
+      sensor_msgs::PointCloud2ConstIterator<uint8_t> iter_line(*msg, "line");
+      sensor_msgs::PointCloud2ConstIterator<uint32_t> iter_offset_time(*msg, "offset_time");
+
+      for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z,
+          ++iter_intensity, ++iter_tag, ++iter_line, ++iter_offset_time) {
+        file << *iter_x << " " << *iter_y << " " << *iter_z << " "
+             << *iter_intensity << " " << *iter_offset_time << " "
+             << (int)*iter_tag << " " << (int)*iter_line << std::endl;
+      }
+    }
+
     file.close();
     pcd_save_cnt_++;
   }
