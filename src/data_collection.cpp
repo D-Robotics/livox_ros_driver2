@@ -121,6 +121,7 @@ class ROS2DataCollection : public rclcpp::Node {
     motion_detect_ = this->declare_parameter("motion_detect", motion_detect_);
     check_camera_sync_ = this->declare_parameter("check_camera_sync", check_camera_sync_);
     check_lidar_exist_ = this->declare_parameter("check_lidar_exist", check_lidar_exist_);
+    bool is_ir = this->declare_parameter("is_ir", false);
     int motion_window_size = this->declare_parameter("motion_window_size", 200);
     bool check_is_external_driver = this->declare_parameter("check_ext_driver", false);
     bool enable_pause = this->declare_parameter("enable_pause", true);
@@ -131,8 +132,10 @@ class ROS2DataCollection : public rclcpp::Node {
     if (motion_detect_) {
       motion_detector_ = std::make_shared<MotionDetector>(motion_window_size, a_th, w_th);
     }
-
     data_dir_ = home_dir + generate_timestamp_folder();
+    if (is_ir) {
+      data_dir_ += "_IR";
+    }
     image_dir_ = data_dir_ + "/image/";
     pcd_dir_ = data_dir_ + "/pcd/";
     imu_dir_ = data_dir_ + "/imu/";
