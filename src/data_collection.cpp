@@ -135,7 +135,7 @@ class ROS2DataCollection : public rclcpp::Node {
     }
     data_dir_ = home_dir + generate_timestamp_folder();
     if (is_ir) {
-      data_dir_ += "_IR";
+      data_dir_ += "_image_ir";
     }
     image_dir_ = data_dir_ + "/image/";
     pcd_dir_ = data_dir_ + "/pcd/";
