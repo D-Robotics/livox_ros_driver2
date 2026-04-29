@@ -1,8 +1,0 @@
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/livox_lidar_sdk_static.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/livox_lidar_sdk_shared.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/edit_cache.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/rebuild_cache.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/list_install_components.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/install.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/install/local.dir
-/root/dockershare/1_RosCode/work_humble_ws_x5/Livox_SDK2/sdk_core/build/CMakeFiles/install/strip.dir

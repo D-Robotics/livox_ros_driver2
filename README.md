@@ -16,6 +16,7 @@ cd /livox_ros_driver2
 ln -sf ./package_ROS2.xml ./package.xml
 # 交叉编译
 cd tros_ws
+export LIVOX_SDK_PATH=/path/to/Livox-SDK2
 rm -rfv ./install/lib/livox_ros_driver2
 rm -rfv ./install/share/livox_ros_driver2
 bash ./robot_dev_config/build.sh -p X5 -s livox_ros_driver2

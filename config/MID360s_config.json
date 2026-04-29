@@ -12,7 +12,7 @@
     },
     "host_net_info" : [
       {
-        "host_ip"        : "10.112.148.77",
+        "host_ip"        : "10.112.148.131",
         "cmd_data_port"  : 56101,
         "push_msg_port"  : 56201,
         "point_data_port": 56301,

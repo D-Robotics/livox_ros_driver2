@@ -246,11 +246,30 @@ else(ROS_EDITION STREQUAL "ROS2")
     LIBRARY_NAME ${PROJECT_NAME}
   )
 
+  # ===== Get Livox SDK path from environment =====
+  if(NOT DEFINED ENV{LIVOX_SDK_PATH})
+    message(FATAL_ERROR
+      "LIVOX_SDK_PATH is not set. Please export it first.\n"
+      "Example:\n"
+      "  export LIVOX_SDK_PATH=/path/to/Livox-SDK2\n"
+      "Check:\n"
+      "  echo $LIVOX_SDK_PATH"
+    )
+  endif()
+
+  set(LIVOX_SDK_PATH $ENV{LIVOX_SDK_PATH})
+
+  # check path exists
+  if(NOT EXISTS ${LIVOX_SDK_PATH})
+    message(FATAL_ERROR "LIVOX_SDK_PATH does not exist: ${LIVOX_SDK_PATH}")
+  endif()
+
+  message(STATUS "Using Livox SDK path: ${LIVOX_SDK_PATH}")
   ## make sure the livox_lidar_sdk_shared library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so ${CMAKE_CURRENT_SOURCE_DIR}/Livox_SDK2 REQUIRED)
+  find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so ${LIVOX_SDK_PATH} REQUIRED)
 
   ##
-  set(LIVOX_LIDAR_SDK_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Livox_SDK2/include)
+  set(LIVOX_LIDAR_SDK_INCLUDE_DIR ${LIVOX_SDK_PATH}/include)
   find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR
     NAMES "livox_lidar_api.h" "livox_lidar_def.h"
     REQUIRED)
@@ -341,7 +360,7 @@ else(ROS_EDITION STREQUAL "ROS2")
   )
 
   install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/Livox_SDK2/sdk_core/build/liblivox_lidar_sdk_shared.so
+    ${LIVOX_SDK_PATH}/sdk_core/build/liblivox_lidar_sdk_shared.so
     DESTINATION lib
   )
 
