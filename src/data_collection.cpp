@@ -163,6 +163,12 @@ class ROS2DataCollection : public rclcpp::Node {
     generate_device_info( calib_file, log_str);
     RCLCPP_WARN(this->get_logger(), "%s .", log_buffer);
 
+    if (image_format_ != "yuv" && image_format_ != "png" && image_format_ != "jpg" && image_format_ != "jpeg") {
+      std::cout << "[ERROR] Please check the image_format is 'yuv' or 'png' or 'jpg'"
+                   ", rather than " << image_format_ << std::endl;
+      std::exit(-1);
+    }
+
     float capacity;
     float space_ratio = 1 - get_free_space(home_dir, capacity);
     if (check_is_external_driver) {
@@ -220,11 +226,11 @@ class ROS2DataCollection : public rclcpp::Node {
       auto snap_func = [this]() {
         int64_t image_ts, pcd_ts;
         RCLCPP_WARN(this->get_logger(), "snap_shot start.");
+        RCLCPP_WARN(this->get_logger(), "waiting for snap shot cmd, please enter ENTER.");
         while (rclcpp::ok()) {
           bool saved = false;
           sensor_msgs::msg::Image::SharedPtr img_msg = nullptr;
           sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg = nullptr;
-          RCLCPP_WARN(this->get_logger(), "waiting for snap shot cmd, please enter ENTER.");
           if (!kbhit()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
@@ -241,16 +247,25 @@ class ROS2DataCollection : public rclcpp::Node {
                 while (!saved && rclcpp::ok()) {
                   if (pcd_que_.get(pcd_msg, 300)) {
                     pcd_ts = pcd_msg->header.stamp.sec * 1e9 + pcd_msg->header.stamp.nanosec;
-                    if (std::abs(pcd_ts - image_ts) < 1e6) {
+                    if (check_camera_sync_) {
+                      if (std::abs(pcd_ts - image_ts) < 1e6) {
+                        save_image(image_ts, img_msg);
+                        save_pcd(image_ts, pcd_msg);
+                        RCLCPP_WARN(this->get_logger(),
+                                    "save snap shot data succeed. image ts: %f, pcd ts: %f, diff: %f",
+                                    image_ts * 1e-9, pcd_ts * 1e-9, (image_ts - pcd_ts) * 1e-9);
+                        saved = true;
+                      } else if (pcd_ts > image_ts) {
+                        pcd_que_.put_front(pcd_msg);
+                        break;
+                      }
+                    } else {
                       save_image(image_ts, img_msg);
                       save_pcd(image_ts, pcd_msg);
                       RCLCPP_WARN(this->get_logger(),
                                   "save snap shot data succeed. image ts: %f, pcd ts: %f, diff: %f",
                                   image_ts * 1e-9, pcd_ts * 1e-9, (image_ts - pcd_ts) * 1e-9);
                       saved = true;
-                    } else if (pcd_ts > image_ts) {
-                      pcd_que_.put_front(pcd_msg);
-                      break;
                     }
                   } else {
                     RCLCPP_ERROR(this->get_logger(), "=====failed to get pcd, so we only save image, ts: %f ====", image_ts * 1e-9);
@@ -260,7 +275,7 @@ class ROS2DataCollection : public rclcpp::Node {
                   }
                 }
               } else {
-                RCLCPP_ERROR(this->get_logger(), "=====failed to get image====");
+                RCLCPP_ERROR(this->get_logger(), "=====failed to get image, image size: %d ====", image_que_.size());
                 break;
               }
             }
@@ -607,11 +622,11 @@ class ROS2DataCollection : public rclcpp::Node {
       } else {
         RCLCPP_ERROR_STREAM(this->get_logger(), "cannot save: " << filename);
       }
-    } else {
+    } else if (image_format_ == "png" || image_format_ == "jpg" || image_format_ == "jpeg") {
       cv::Mat nv12(msg->height * 3 / 2, msg->width, CV_8UC1, msg->data.data());
       cv::Mat bgr;
       cv::cvtColor(nv12, bgr, cv::COLOR_YUV2BGR_NV12);
-      cv::imwrite(image_dir_ + "/" + std::to_string(timestamp) + ".png", bgr);
+      cv::imwrite(image_dir_ + "/" + std::to_string(timestamp) + "." + image_format_, bgr);
     }
     image_save_cnt_++;
   }
