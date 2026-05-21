@@ -289,9 +289,9 @@ void Lddc::InitPointcloud2MsgHeader(PointCloud2& cloud) {
   cloud.fields[5].count = 1;
   cloud.fields[5].datatype = PointField::UINT8;
   cloud.fields[6].offset = 18;
-  cloud.fields[6].name = "timestamp";
+  cloud.fields[6].name = "offset_time";
   cloud.fields[6].count = 1;
-  cloud.fields[6].datatype = PointField::FLOAT64;
+  cloud.fields[6].datatype = PointField::UINT32;
   cloud.point_step = sizeof(LivoxPointXyzrtlt);
 }
 
@@ -325,7 +325,7 @@ void Lddc::InitPointcloud2Msg(const StoragePacket& pkg, PointCloud2& cloud, uint
     point.reflectivity = pkg.points[i].intensity;
     point.tag = pkg.points[i].tag;
     point.line = pkg.points[i].line;
-    point.timestamp = static_cast<double>(pkg.points[i].offset_time);
+    point.offset_time = static_cast<uint32_t>(pkg.points[i].offset_time - pkg.base_time);
     points.push_back(std::move(point));
   }
   cloud.data.resize(pkg.points_num * sizeof(LivoxPointXyzrtlt));
