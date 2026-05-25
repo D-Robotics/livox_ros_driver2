@@ -1,4 +1,5 @@
-  set(HUMBLE_ROS "humble")
+set(ROS_DISTRO $ENV{ROS_DISTRO})
+message(STATUS "ROS_DISTRO: ${ROS_DISTRO}")
 # judge which cmake codes to use 
 if(ROS_EDITION STREQUAL "ROS1")
 
@@ -243,7 +244,6 @@ else(ROS_EDITION STREQUAL "ROS2")
     "msg/CustomPoint.msg"
     "msg/CustomMsg.msg"
     DEPENDENCIES builtin_interfaces std_msgs
-    LIBRARY_NAME ${PROJECT_NAME}
   )
 
   # ===== Get Livox SDK path from environment =====
@@ -266,22 +266,19 @@ else(ROS_EDITION STREQUAL "ROS2")
 
   message(STATUS "Using Livox SDK path: ${LIVOX_SDK_PATH}")
   ## make sure the livox_lidar_sdk_shared library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so ${LIVOX_SDK_PATH} REQUIRED)
+  find_library(LIVOX_LIDAR_SDK_LIBRARY NAMES livox_lidar_sdk_shared PATHS ${LIVOX_SDK_PATH}/sdk_core/build REQUIRED)
 
   ##
   set(LIVOX_LIDAR_SDK_INCLUDE_DIR ${LIVOX_SDK_PATH}/include)
-  find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR
-    NAMES "livox_lidar_api.h" "livox_lidar_def.h"
-    REQUIRED)
+  find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR NAMES livox_lidar_api.h livox_lidar_def.h PATHS ${LIVOX_SDK_PATH}/include REQUIRED)
 
   ## PCL library
   link_directories(${PCL_LIBRARY_DIRS})
   add_definitions(${PCL_DEFINITIONS})
 
   ## Eigen
-  set(SYS_ROOT ${CMAKE_SYSROOT})
-  message("SYS_ROOT is " ${SYS_ROOT})
-  include_directories(${SYS_ROOT}/usr/include/eigen3)
+  find_package(Eigen3 REQUIRED)
+  include_directories(${EIGEN3_INCLUDE_DIR})
 
   # livox ros2 driver target
   ament_auto_add_library(${PROJECT_NAME} SHARED
@@ -308,22 +305,24 @@ else(ROS_EDITION STREQUAL "ROS2")
   target_include_directories(${PROJECT_NAME} PRIVATE ${livox_sdk_INCLUDE_DIRS})
 
   # get include directories of custom msg headers
-  if(HUMBLE_ROS STREQUAL "humble")
-    rosidl_get_typesupport_target(cpp_typesupport_target
-    ${LIVOX_INTERFACES} "rosidl_typesupport_cpp")
-    target_link_libraries(${PROJECT_NAME} "${cpp_typesupport_target}")
-  else()
-    set(LIVOX_INTERFACE_TARGET "${LIVOX_INTERFACES}__rosidl_typesupport_cpp")
-    add_dependencies(${PROJECT_NAME} ${LIVOX_INTERFACES})
-    get_target_property(LIVOX_INTERFACES_INCLUDE_DIRECTORIES ${LIVOX_INTERFACE_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
-  endif()
+  rosidl_get_typesupport_target(cpp_typesupport_target
+    ${LIVOX_INTERFACES}
+    "rosidl_typesupport_cpp"
+  )
+
+  target_link_libraries(${PROJECT_NAME}
+    "${cpp_typesupport_target}"
+  )
+
+  add_dependencies(${PROJECT_NAME}
+    ${LIVOX_INTERFACES}
+  )
 
   # include file direcotry
   target_include_directories(${PROJECT_NAME} PUBLIC
     ${PCL_INCLUDE_DIRS}
     ${APR_INCLUDE_DIRS}
     ${LIVOX_LIDAR_SDK_INCLUDE_DIR}
-    ${LIVOX_INTERFACES_INCLUDE_DIRECTORIES}   # for custom msgs
     3rdparty
     src
   )
@@ -331,9 +330,6 @@ else(ROS_EDITION STREQUAL "ROS2")
   # link libraries
   target_link_libraries(${PROJECT_NAME}
     ${LIVOX_LIDAR_SDK_LIBRARY}
-    ${LIVOX_INTERFACE_TARGET}   # for custom msgs
-    ${PPT_LIBRARY}
-    ${Boost_LIBRARY}
     ${PCL_LIBRARIES}
     ${APR_LIBRARIES}
   )
@@ -359,9 +355,6 @@ else(ROS_EDITION STREQUAL "ROS2")
     launch_ROS2
   )
 
-  install(FILES
-    ${LIVOX_SDK_PATH}/sdk_core/build/liblivox_lidar_sdk_shared.so
-    DESTINATION lib
-  )
+  install(FILES ${LIVOX_LIDAR_SDK_LIBRARY} DESTINATION lib)
 
 endif()
