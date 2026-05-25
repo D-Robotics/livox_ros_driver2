@@ -555,3 +555,150 @@ Please add '/usr/local/lib' to the env LD_LIBRARY_PATH.
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib
   source ~/.bashrc
   ```
+
+# lidar_img_data_collect
+
+ROS 2 tool for automatically collecting:
+
+* Stereo images
+* Livox point clouds
+* IMU data
+
+The node detects whether the device is static using IMU and image motion checks, then automatically saves a group of synchronized data.
+
+---
+
+# 1. Launch
+
+## Example
+
+```bash
+ros2 launch lidar_img_data_collect data_collection.launch.py \
+output_dir:=/userdata/zhikang.zeng/lidar_img_data_collect \
+enable_image_motion_check:=false
+```
+
+Enable / disable saving dynamically:
+
+```bash
+ros2 param set /LidarImgDataCollectNode save_data_flag true
+ros2 param set /LidarImgDataCollectNode save_data_flag false
+```
+
+---
+
+# 2. Parameters
+
+| Parameter                 | Type   | Default                                 | Description                |
+| ------------------------- | ------ | --------------------------------------- | -------------------------- |
+| output_dir                | string | /userdata/lidar_img_data_collect        | Root save directory        |
+| imu_topic                 | string | /livox/imu                              | IMU topic                  |
+| lidar_topic               | string | /livox/lidar                            | Point cloud topic          |
+| image_topic               | string | /husq_stereo_cam_node/image_combine_rgb | Image topic                |
+| image_format              | string | jpg                                     | jpg / png / yuv            |
+| image_collect_fps         | double | 0.5                                     | Image save FPS             |
+| save_motion_image         | bool   | true                                    | Save motion images         |
+| target_pcd_count          | int    | 200                                     | PCD count per group        |
+| save_pcd_binary           | bool   | true                                    | Save binary PCD            |
+| gravity                   | double | 9.81                                    | Gravity value              |
+| imu_window_size           | int    | 200                                     | IMU detect window          |
+| accel_std_th              | double | 0.03                                    | Static accel threshold     |
+| gyro_std_th               | double | 0.01                                    | Static gyro threshold      |
+| max_imu_age_sec           | double | 0.2                                     | Max IMU delay              |
+| static_confirm_count_th   | int    | 10                                      | Static confirm count       |
+| motion_confirm_count_th   | int    | 3                                       | Motion confirm count       |
+| enable_image_motion_check | bool   | true                                    | Enable image motion detect |
+| image_diff_ratio_th       | double | 0.02                                    | Motion diff ratio          |
+| image_diff_gray_th        | int    | 25                                      | Motion gray threshold      |
+| save_data_flag            | bool   | false                                   | Enable saving              |
+
+Parameters are declared in the node constructor. 
+
+---
+
+# 3. Topics
+
+## Subscribe
+
+| Topic                                   | Type                        | Description  |
+| --------------------------------------- | --------------------------- | ------------ |
+| /livox/imu                              | sensor_msgs/msg/Imu         | IMU data     |
+| /livox/lidar                            | sensor_msgs/msg/PointCloud2 | Point cloud  |
+| /husq_stereo_cam_node/image_combine_rgb | sensor_msgs/msg/Image       | Stereo image |
+
+## Publish
+
+| Topic          | Type                  | Description          |
+| -------------- | --------------------- | -------------------- |
+| ~/status_image | sensor_msgs/msg/Image | Status visualization |
+
+Topics are created in the node initialization. 
+
+---
+
+# 4. Save Structure
+
+A session directory is automatically created:
+
+```text id="j9yjlwm"
+output_dir/
+└── 2026_05_21_12_30_15/
+    ├── motion/
+    ├── group_000000/
+    │   ├── image/
+    │   ├── pcd/
+    │   └── group.info
+    └── group_000001/
+```
+
+---
+
+# 5. Status Image
+
+The status image displays:
+
+* Current state
+* Save enable status
+* Current group ID
+* Image / PCD count
+* Save directory
+* Disk usage
+
+Example:
+
+```text id="whn9xv"
+STATE: COLLECTING
+SAVE: ENABLED
+GROUP IMG: 15  PCD: 86/200
+GROUP ID: group_000003
+SAVE DIR: lidar_img_data_collect/2026_05_21_12_30_15
+DISK: 12.5G / 58.0G (21.5%)
+```
+
+---
+
+# 6. Collection Workflow
+
+```text id="84og0c"
+WAIT_STATIC
+    ↓
+Static detected
+    ↓
+COLLECTING
+    ↓
+Save group
+    ↓
+WAIT_MOTION
+    ↓
+Motion detected
+    ↓
+WAIT_STATIC
+```
+
+The node automatically prevents saving when:
+
+* IMU motion is detected
+* Image motion is detected
+* Device is not stable enough
+
+
