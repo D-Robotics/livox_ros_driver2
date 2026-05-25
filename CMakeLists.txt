@@ -344,14 +344,33 @@ elseif(ROS_EDITION STREQUAL "ROS2")
     EXECUTABLE ${PROJECT_NAME}_node
   )
   
-  ament_auto_add_executable(data_collection_node
-    src/data_collection.cpp
+  # ament_auto_add_executable(data_collection_node
+  #   src/data_collection.cpp
+  # )
+  # ament_target_dependencies(data_collection_node rclcpp sensor_msgs)
+  # target_link_libraries(
+  #         data_collection_node
+  #         ${OpenCV_LIBRARIES}
+  # )
+  # ==================================== data collection ===================================
+  add_executable(data_collection_node 
+  src/main.cpp
+  src/auto_data_collector_node.cpp
+  src/imu_motion_detector.cpp
+  src/image_motion_detector.cpp
+  src/data_saver.cpp
   )
-  ament_target_dependencies(data_collection_node rclcpp sensor_msgs)
-  target_link_libraries(
-          data_collection_node
-          ${OpenCV_LIBRARIES}
+  target_include_directories(data_collection_node PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+  target_compile_features(data_collection_node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+  ament_target_dependencies(data_collection_node
+    rclcpp
+    sensor_msgs
+    OpenCV
   )
+  install(TARGETS data_collection_node DESTINATION lib/${PROJECT_NAME})
+  # ==================================== data collection ===================================
 
   if(BUILD_TESTING)
     find_package(ament_lint_auto REQUIRED)
@@ -385,10 +404,10 @@ else()
   #---------------------------------------------------------------------------------------
   # find package and the dependecy
   #---------------------------------------------------------------------------------------
-#  find_package(Boost 1.54 REQUIRED COMPONENTS
-#          system
-#          thread
-#          chrono)
+  #  find_package(Boost 1.54 REQUIRED COMPONENTS
+  #          system
+  #          thread
+  #          chrono)
   set(CMAKE_PREFIX_PATH ${PROJECT_SOURCE_DIR}/3rdparty/protobuf/)
   find_package(
           Protobuf REQUIRED
