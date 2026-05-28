@@ -20,14 +20,35 @@ struct ImuData {
 };
 
 struct MotionDetector {
+
   enum Status {
+    DISABLE,
     INIT,
     STATIC,
     MOTION,
     ENTERING_STATIC,
     ENTERING_MOTION,
-    IMU_TOO_FAR
+    IMU_NOT_ENOUGH
   };
+
+  static std::string State2String(Status status) {
+    switch (status) {
+      case Status::DISABLE:
+        return "DISABLE";
+      case Status::INIT:
+        return "INTI";
+      case Status::STATIC:
+        return "STATIC";
+      case Status::MOTION:
+        return "MOTION";
+      case Status::ENTERING_STATIC:
+        return "ENTERING_STATIC";
+      case Status::ENTERING_MOTION:
+        return "ENTERING_MOTION";
+      case Status::IMU_NOT_ENOUGH:
+        return "IMU_NOT_ENOUGH";
+    }
+  }
 
   explicit MotionDetector(uint32_t motion_window_size,
       double a_th, double w_th) : window_size_(motion_window_size), a_th_(a_th), w_th_(w_th), status_(INIT) {
@@ -37,7 +58,7 @@ struct MotionDetector {
   void FeedImu(const ImuData &imu_data) {
     std::lock_guard<std::mutex> lck(mtx_);
     imu_buffer_.push_back(imu_data);
-    if (imu_buffer_.size() > 4000) {
+    if (imu_buffer_.size() > 5000) {
       imu_buffer_.pop_front();
     }
   }
@@ -62,7 +83,7 @@ struct MotionDetector {
     }
 
     if (imu_window.size() < window_size_) {
-      status_ = IMU_TOO_FAR;
+      status_ = IMU_NOT_ENOUGH;
       return status_;
     }
 
@@ -91,10 +112,10 @@ struct MotionDetector {
     }
     a_var = std::sqrt(a_var / (imu_window.size() - 1));
     w_var = std::sqrt(w_var / (imu_window.size() - 1));
-    bool jark = a_var > a_th_ && w_var > w_th_;
+    bool jark = a_var > a_th_ || w_var > w_th_;
     if (jark) {
       motion_count_++;
-      if (motion_count_ >= 2) motion_count_ = 2;
+      if (motion_count_ >= MOTION_COUNT) motion_count_ = MOTION_COUNT;
       switch (status_) {
         case ENTERING_MOTION:
         case MOTION:
@@ -107,12 +128,12 @@ struct MotionDetector {
       }
     } else {
       motion_count_--;
-      if (motion_count_ <= -2) motion_count_ = -2;
+      if (motion_count_ <= -MOTION_COUNT) motion_count_ = -MOTION_COUNT;
       switch (status_) {
         case INIT:
         case ENTERING_MOTION:
         case MOTION:
-          if (motion_count_ < 0) {
+          if (motion_count_ <= -MOTION_COUNT) {
             status_ = ENTERING_STATIC;
             enter_static_timestamp_ = timestamp;
           }
@@ -123,9 +144,6 @@ struct MotionDetector {
       }
     }
 
-    while (!imu_buffer_.empty() && imu_buffer_.front().timestamp < last_timestamp_) {
-      imu_buffer_.pop_front();
-    }
     last_timestamp_ = timestamp;
     last_a_var_ = a_var;
     last_w_var_ = w_var;
@@ -150,4 +168,5 @@ struct MotionDetector {
   std::mutex mtx_;
   enum Status status_{INIT};
   std::deque<ImuData> imu_buffer_;
+  const int MOTION_COUNT = 3;
 };

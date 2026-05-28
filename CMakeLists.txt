@@ -345,7 +345,11 @@ elseif(ROS_EDITION STREQUAL "ROS2")
   )
   
   ament_auto_add_executable(data_collection_node
-    src/data_collection.cpp
+    src/data_collection/data_collection_main.cpp
+    src/data_collection/data_collection_node.cpp
+    src/data_collection/data_callbacks.cpp
+    src/data_collection/data_saver.cpp
+    src/data_collection/utils.cpp
   )
   ament_target_dependencies(data_collection_node rclcpp sensor_msgs)
   target_link_libraries(
