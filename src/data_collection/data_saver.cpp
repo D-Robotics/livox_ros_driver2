@@ -192,6 +192,7 @@ void DataSaver::DrainAndFlush(
     if (static_record_file_.is_open()) {
       static_record_file_ << "image/" << ts << "." << config_.image_format << std::endl;
     }
+    last_image_save_ts_.store(ts, std::memory_order_relaxed);
   }
   img_buf.clear();
 
@@ -202,6 +203,7 @@ void DataSaver::DrainAndFlush(
     if (static_record_file_.is_open()) {
       static_record_file_ << "pcd/" << ts << ".pcd" << std::endl;
     }
+    last_pcd_save_ts_.store(ts, std::memory_order_relaxed);
   }
   pcd_buf.clear();
 }
