@@ -56,6 +56,9 @@ bool DataSaver::ProcessImage(uint64_t timestamp,
     if (!is_paused_) {
       image_que_.put(msg);
     }
+    if (image_que_.size() > 10) {
+      image_que_.pop_front();
+    }
     return true;
   }
 
@@ -133,6 +136,9 @@ bool DataSaver::ProcessPcd(uint64_t timestamp,
     last_pcd_save_ts_.store(timestamp, std::memory_order_relaxed);
     if (!is_paused_) {
       pcd_que_.put(msg);
+    }
+    if (pcd_que_.size() > 10) {
+      pcd_que_.pop_front();
     }
     return true;
   }
