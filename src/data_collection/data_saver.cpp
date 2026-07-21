@@ -62,7 +62,13 @@ bool DataSaver::ProcessImage(uint64_t timestamp,
     return true;
   }
 
+  // Skip buffering while flush is in progress
+  if (static_flushing_.load(std::memory_order_relaxed)) {
+    return false;
+  }
+
   switch (motion_status_) {
+    case MotionDetector::ENTERING_MOTION:
     case MotionDetector::MOTION:
       // Motion: save image directly with sync and gap filtering
       if (!camera_sync) return false;
@@ -79,11 +85,12 @@ bool DataSaver::ProcessImage(uint64_t timestamp,
         }
       }
       saver_status_.store(SaveState::WAIT_STATIC);
+      static_image_buf_.clear();
+      static_pcd_buf_.clear();
       return true;
 
     case MotionDetector::ENTERING_STATIC:
       // Transition: clear buffers, start collecting static data
-      static_flushing_.store(false, std::memory_order_relaxed);
       static_image_buf_.clear();
       static_pcd_buf_.clear();
       // No sync/gap filtering for the entering-static image
@@ -92,10 +99,6 @@ bool DataSaver::ProcessImage(uint64_t timestamp,
       break;
 
     case MotionDetector::STATIC:
-      // Skip buffering while flush is in progress
-      if (static_flushing_.load(std::memory_order_relaxed)) {
-        return false;
-      }
       if (saver_status_ == SaveState::COLLECTING) {
         if (static_image_buf_.size() < config_.img_static_collect_count) {
           static_image_buf_.put(msg);
@@ -104,14 +107,6 @@ bool DataSaver::ProcessImage(uint64_t timestamp,
         saver_status_.store(SaveState::COLLECTING);
       }
       break;
-
-    case MotionDetector::ENTERING_MOTION:
-      // Motion interrupted — discard all buffered data
-      static_image_buf_.clear();
-      static_pcd_buf_.clear();
-      static_flushing_.store(false, std::memory_order_relaxed);
-      return false;
-
     default:
       return false;
   }
@@ -176,6 +171,7 @@ void DataSaver::FlushThreadFunc() {
     if (static_flushing_.load(std::memory_order_relaxed)) {
       DrainAndFlush(static_image_buf_, static_pcd_buf_);
       saver_status_.store(SaveState::WAIT_MOTION);
+      static_flushing_.store(false, std::memory_order_relaxed);
     }
   }
 }
@@ -194,6 +190,7 @@ void DataSaver::DrainAndFlush(
     }
     last_image_save_ts_.store(ts, std::memory_order_relaxed);
   }
+  static_record_file_.flush();
   img_buf.clear();
 
   sensor_msgs::msg::PointCloud2::SharedPtr pcd_msg;
@@ -205,6 +202,7 @@ void DataSaver::DrainAndFlush(
     }
     last_pcd_save_ts_.store(ts, std::memory_order_relaxed);
   }
+  static_record_file_.flush();
   pcd_buf.clear();
 }
 
