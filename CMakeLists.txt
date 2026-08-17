@@ -266,7 +266,15 @@ else(ROS_EDITION STREQUAL "ROS2")
 
   message(STATUS "Using Livox SDK path: ${LIVOX_SDK_PATH}")
   ## make sure the livox_lidar_sdk_shared library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY NAMES livox_lidar_sdk_shared PATHS ${LIVOX_SDK_PATH}/sdk_core/build REQUIRED)
+  # find_library(LIVOX_LIDAR_SDK_LIBRARY NAMES livox_lidar_sdk_shared PATHS ${LIVOX_SDK_PATH}/sdk_core/build REQUIRED)
+  find_library(
+    LIVOX_LIDAR_SDK_LIBRARY
+    NAMES livox_lidar_sdk_shared
+    PATHS ${LIVOX_SDK_PATH}/sdk_core/build
+    NO_DEFAULT_PATH
+    NO_CMAKE_FIND_ROOT_PATH
+    REQUIRED
+  )
 
   ##
   set(LIVOX_LIDAR_SDK_INCLUDE_DIR ${LIVOX_SDK_PATH}/include)
