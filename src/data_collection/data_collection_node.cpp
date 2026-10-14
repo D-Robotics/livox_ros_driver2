@@ -67,7 +67,7 @@ ROS2DataCollection::ROS2DataCollection() : Node("ROS2DataCollection") {
            "enable_pause: %d, motion_detect: %d, motion_window_size: %d, motion_accel_th: %f, motion_gyro_th: %f\n"
            "img_static_collect_count: %d, pcd_static_collect_count: %d\n"
            "save_pcd_bin: %d, is_ir: %d\n"
-           "check_camera_sync: %d, check_lidar_exist_: %d\n"
+           "check_camera_sync: %d, check_lidar_exist: %d\n"
            "image_format: %s, calib_file: %s\n",
            data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
            snap_shot_, gravity, image_gap_mode, lidar_gap_mode, check_is_external_driver,

@@ -58,7 +58,7 @@ void generate_device_info(const std::string& data_dir,
   const std::string device_info_file = data_dir + "/device.info";
   const std::string generate_cmd =
       R"SH({ printf "ip: %s\nuname: %s\n" "$(ifconfig eth0 | grep 'inet ' | awk '{print $2}')" "$(uname -a)"; echo -n "isp tuning file md5: "; md5sum /usr/hobot/lib/sensor/ox02c1s_tuning.json; } > )SH"
-      + device_info_file + "; sync;";
+      + device_info_file + "; sync;" + "cat " + device_info_file;
   std::cout << "generate device info cmd: \n" << generate_cmd << std::endl;
   system(generate_cmd.c_str());
   std::ofstream ofs(device_info_file, std::ios::app);
