@@ -555,3 +555,67 @@ Please add '/usr/local/lib' to the env LD_LIBRARY_PATH.
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib
   source ~/.bashrc
   ```
+
+## 7. Data collection
+
+Launch:
+
+```shell
+ros2 launch livox_ros_driver2 data_collection.launch.py
+```
+
+See `launch_ROS2/data_collection.launch.py` for all parameters (`output_dir`, `image_topic`, `imu_topic`, `image_format`, `motion_detect`, ...). Run the full capture chain via `script/run_testdata_capture.sh`.
+
+### 7.1 Output folder layout
+
+Each run creates `<output_dir>/ros2_data/<YYYY-mm-dd-HH.MM.SS>[_image_ir]/`. Two layouts, switched by the `kalibr_format` parameter (default `False` = legacy):
+
+Legacy (`kalibr_format:=False`, default):
+
+```
+<run_dir>/
+├── image/           # whole combined frames, filename = header stamp in ns
+├── imu/imu_data.txt # rows: timestamp[ns],wx,wy,wz[rad/s],ax,ay,az[m/s2], no header
+├── pcd/ ...
+```
+
+kalibr_bagcreater compatible (`kalibr_format:=True`):
+
+```
+<run_dir>/
+├── cam0/
+│   └── data/1730173200123456789.png   # EuRoC structure: camN/data/<stamp_ns>.<ext>; topic /cam0/image_raw
+├── cam1/            # only when stereo_split:=True: bottom (right) half, same stamp
+│   └── data/1730173200123456789.png
+├── imu0.csv         # at run-dir root; header line + rows:
+│                    #   timestamp[ns],wx,wy,wz[rad/s],ax,ay,az[m/s2] (topic /imu0)
+├── pcd/             # LiDAR frames (not used by kalibr)
+├── device.info / log.txt / motion_datas.txt / static_datas.txt
+```
+
+The camera topic carries both eyes of the stereo camera combined **top(left) / bottom(right)** in one NV12 frame. With `kalibr_format:=True`:
+
+- `stereo_split:=True`: the frame is split; `cam0/` = top (left) half, `cam1/` = bottom (right) half, sharing one timestamp — ready for stereo/stereo-IMU kalibr calibration.
+- `stereo_split:=False` (default): `cam0/` = the whole combined frame.
+
+Legacy format ignores `stereo_split` and always stores the whole frame.
+
+### 7.2 Convert a run folder to a ROS1 bag for kalibr
+
+Use `kalibr_bagcreater` (from the kalibr repo) on the **single run directory** — it recursively merges every `cam*` dir and `imu*.csv` under the given folder:
+
+```shell
+python kalibr_bagcreater --folder <run_dir> --output-bag <run_dir>.bag
+# mono camera-IMU
+rosrun kalibr kalibr_calibrate_imu_camera \
+  --bag <run_dir>.bag --cam /cam0/image_raw --imu /imu0 \
+  --target <aprilgrid_6x6.yaml> --time-calibration
+# stereo-IMU
+rosrun kalibr kalibr_calibrate_imu_camera \
+  --bag <run_dir>.bag --cam /cam0/image_raw:/cam1/image_raw --imu /imu0 \
+  --target <aprilgrid_6x6.yaml> --time-calibration
+```
+
+Note: `image_format` must be `png` or `jpg` for the kalibr flow (`yuv` files cannot be read by kalibr_bagcreater).
+
+A smoke test for the output format is available: `script/smoke_test_data_collection.py` (publishes fake images/IMU to a running `data_collection_node` and validates the saved folder against the bagcreater scan logic). See its `--mode {legacy,kalibr_full,kalibr_stereo}` option.

@@ -36,26 +36,50 @@ ROS2DataCollection::ROS2DataCollection() : Node("ROS2DataCollection") {
   int pcd_static_collect_count = this->declare_parameter("pcd_static_collect_count", 50);
   int img_static_collect_count = this->declare_parameter("img_static_collect_count", 2);
   std::string calib_file = this->declare_parameter("calib_file", "");
+  // kalibr_format: cam0[/cam1]/<ts>.<ext> + imu/imu0.csv (kalibr_bagcreater compatible);
+  //                legacy: image/<ts>.<ext> + imu/imu_data.txt
+  bool kalibr_format = this->declare_parameter("kalibr_format", false);
+  // Split top/bottom combined stereo frame into cam0(top)/cam1(bottom); kalibr_format only
+  bool stereo_split = this->declare_parameter("stereo_split", false);
 
   // Setup directories
   data_dir_ = output_dir + data_collection::generate_timestamp_folder();
   if (is_ir) {
     data_dir_ += "_image_ir";
   }
-  std::string image_dir = data_dir_ + "/image/";
+  std::string image_dir;
+  std::string image_dir2;
+  if (kalibr_format) {
+    // EuRoC/kalibr structure: dataset/camN/data/<timestamp_ns>.<ext>
+    image_dir = data_dir_ + "/cam0/data/";
+    if (stereo_split) {
+      image_dir2 = data_dir_ + "/cam1/data/";
+    }
+  } else {
+    image_dir = data_dir_ + "/image/";
+  }
   std::string pcd_dir = data_dir_ + "/pcd/";
-  std::string imu_dir = data_dir_ + "/imu/";
+  std::string imu_dir = data_dir_ + "/imu/";  // legacy only; kalibr_format writes <data_dir>/imu0.csv at root
 
   std::filesystem::create_directories(data_dir_);
   std::filesystem::create_directories(image_dir);
+  if (!image_dir2.empty()) {
+    std::filesystem::create_directories(image_dir2);
+  }
   std::filesystem::create_directories(pcd_dir);
-  std::filesystem::create_directories(imu_dir);
+  if (!kalibr_format) {
+    std::filesystem::create_directories(imu_dir);
+  }
 
   // Validate image format
   if (image_format != "yuv" && image_format != "png" && image_format != "jpg" && image_format != "jpeg") {
     std::cout << "[ERROR] Please check the image_format is 'yuv' or 'png' or 'jpg'"
                  ", rather than " << image_format << std::endl;
     std::exit(-1);
+  }
+  if (kalibr_format && image_format == "yuv") {
+    std::cout << "[WARN] image_format 'yuv' cannot be converted to a kalibr bag by kalibr_bagcreater "
+                 "(png/jpg only); use png or jpg if kalibr calibration is needed" << std::endl;
   }
 
   // Log parameters
@@ -68,14 +92,16 @@ ROS2DataCollection::ROS2DataCollection() : Node("ROS2DataCollection") {
            "img_static_collect_count: %d, pcd_static_collect_count: %d\n"
            "save_pcd_bin: %d, is_ir: %d\n"
            "check_camera_sync: %d, check_lidar_exist: %d\n"
-           "image_format: %s, calib_file: %s\n",
+           "image_format: %s, calib_file: %s\n"
+           "kalibr_format: %d, stereo_split: %d\n",
            data_dir_.c_str(), imu_topic.c_str(), lidar_topic.c_str(), image_topic.c_str(),
            snap_shot_, gravity, image_gap_mode, lidar_gap_mode, check_is_external_driver,
            enable_pause, motion_detect, motion_imu_window_size, a_th, w_th,
            img_static_collect_count, pcd_static_collect_count,
            save_pcd_bin, is_ir,
            check_camera_sync_, check_lidar_exist_,
-           image_format.c_str(), calib_file.c_str());
+           image_format.c_str(), calib_file.c_str(),
+           kalibr_format, stereo_split);
   std::string log_str(log_buffer);
   data_collection::generate_device_info(data_dir_, calib_file, log_str);
   RCLCPP_WARN(this->get_logger(), "%s .", log_buffer);
@@ -98,10 +124,20 @@ ROS2DataCollection::ROS2DataCollection() : Node("ROS2DataCollection") {
   }
 
   // Open IMU log file
-  imu_filename_ = imu_dir + "/imu_data.txt";
+  if (kalibr_format) {
+    // kalibr dataset structure: dataset/camN/<ts>.png + dataset/imu0.csv at folder root;
+    // bagcreater's first csv row is treated as a header and skipped
+    imu_filename_ = data_dir_ + "/imu0.csv";
+  } else {
+    imu_filename_ = imu_dir + "/imu_data.txt";
+  }
   imu_file_.open(imu_filename_, std::ios::out | std::ios::app);
   if (!imu_file_.is_open()) {
     RCLCPP_ERROR(this->get_logger(), "Failed to open IMU file: %s", imu_filename_.c_str());
+  } else if (kalibr_format) {
+    imu_file_ << "timestamp[ns],w_RS_S_x[rad/s],w_RS_S_y[rad/s],w_RS_S_z[rad/s],"
+                 "a_RS_S_x[m/s2],a_RS_S_y[m/s2],a_RS_S_z[m/s2]" << std::endl;
+    imu_file_ << std::setprecision(10);
   }
 
   log_file_.open(data_dir_ + "/log.txt", std::ios::out);
@@ -112,7 +148,10 @@ ROS2DataCollection::ROS2DataCollection() : Node("ROS2DataCollection") {
   // Create DataSaver
   saver_confg_.data_dir = data_dir_;
   saver_confg_.image_dir = image_dir;
+  saver_confg_.image_dir2 = image_dir2;
   saver_confg_.pcd_dir = pcd_dir;
+  saver_confg_.kalibr_format = kalibr_format;
+  saver_confg_.stereo_split = stereo_split;
   saver_confg_.image_format = image_format;
   saver_confg_.save_pcd_bin = save_pcd_bin;
   saver_confg_.gravity = gravity;

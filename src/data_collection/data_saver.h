@@ -39,8 +39,11 @@ class DataSaver {
   struct Config {
     std::string data_dir;
     std::string image_dir;
+    std::string image_dir2;  // cam1 dir, used only when kalibr_format && stereo_split
     std::string pcd_dir;
     std::string image_format = "png";
+    bool kalibr_format = false;  // camN/<ts>.img + imu0.csv (kalibr_bagcreater) vs legacy image/ + imu_data.txt
+    bool stereo_split = false;   // split top/bottom combined frame into cam0(top)/cam1(bottom); kalibr_format only
     bool save_pcd_bin = false;
     float gravity = 9.81f;
     int image_gap_mode = 0;
@@ -103,6 +106,7 @@ class DataSaver {
   void DrainAndFlush(blockqueue<sensor_msgs::msg::Image::SharedPtr>& img_buf,
                      blockqueue<sensor_msgs::msg::PointCloud2::SharedPtr>& pcd_buf);
   void WriteYamlRecord();
+  void WriteImageRecord(std::ofstream& record_file, int64_t timestamp);
   void SaveImageToFile(int64_t timestamp,
                        const sensor_msgs::msg::Image::SharedPtr msg);
   void SavePcdToFile(int64_t timestamp,

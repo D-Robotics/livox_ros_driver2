@@ -60,6 +60,8 @@ def generate_launch_description():
 
         {'name':'image_format', 'default_value':'png', 'description': 'image_format'},
         {'name':'is_ir', 'default_value':'False', 'description': 'is_ir'},
+        {'name':'kalibr_format', 'default_value':'False', 'description': 'save camN/<ts>.img + imu0.csv (kalibr_bagcreater compatible) instead of legacy image/ + imu_data.txt'},
+        {'name':'stereo_split', 'default_value':'False', 'description': 'kalibr_format only: split top/bottom combined frame into cam0(top,left)/cam1(bottom,right)'},
 
         {'name':'calib_file', 'default_value':'', 'description': 'calib_file'},
 

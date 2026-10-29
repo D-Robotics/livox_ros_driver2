@@ -80,9 +80,7 @@ bool DataSaver::ProcessImage(uint64_t timestamp,
       last_image_save_ts_.store(timestamp, std::memory_order_relaxed);
       if (!is_paused_) {
         image_que_.put(msg);
-        if (motion_record_file_.is_open()) {
-          motion_record_file_ << "image/" << timestamp << "." << config_.image_format << std::endl;
-        }
+        WriteImageRecord(motion_record_file_, timestamp);
       }
       saver_status_.store(SaveState::WAIT_STATIC);
       static_image_buf_.clear();
@@ -185,9 +183,7 @@ void DataSaver::DrainAndFlush(
   while (img_buf.get(img_msg, 1) && --target_image_count >= 0) {
     int64_t ts = img_msg->header.stamp.sec * 1e9 + img_msg->header.stamp.nanosec;
     SaveImageToFile(ts, img_msg);
-    if (static_record_file_.is_open()) {
-      static_record_file_ << "image/" << ts << "." << config_.image_format << std::endl;
-    }
+    WriteImageRecord(static_record_file_, ts);
     last_image_save_ts_.store(ts, std::memory_order_relaxed);
   }
   static_record_file_.flush();
@@ -314,21 +310,56 @@ void DataSaver::PcdWorkerThread() {
 
 void DataSaver::SaveImageToFile(int64_t timestamp,
                                 const sensor_msgs::msg::Image::SharedPtr msg) {
-  std::string filename;
+  // kalibr stereo mode: combined frame is top(left)/bottom(right); save halves to cam0/cam1
+  const bool split = config_.kalibr_format && config_.stereo_split && !config_.image_dir2.empty();
+  std::string filename = std::to_string(timestamp) + "." + config_.image_format;
   if (config_.image_format == "yuv") {
-    filename = std::to_string(timestamp) + ".yuv";
-    std::ofstream file(config_.image_dir + "/" + filename, std::ios::out | std::ios::binary);
-    if (file.is_open()) {
-      file.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
+    if (split) {
+      // NV12 planes: Y [0,WH)+[WH,2WH), UV [2WH,2WH+WH/2)+rest, with W*H per half frame
+      const size_t w = msg->width, half_h = msg->height / 2;
+      const size_t y_size = w * half_h, uv_size = y_size / 2;
+      const uint8_t* p = msg->data.data();
+      if (msg->data.size() >= 2 * y_size + 2 * uv_size) {
+        std::vector<uint8_t> left, right;
+        left.reserve(y_size + uv_size);
+        right.reserve(y_size + uv_size);
+        left.insert(left.end(), p, p + y_size);
+        left.insert(left.end(), p + 2 * y_size, p + 2 * y_size + uv_size);
+        right.insert(right.end(), p + y_size, p + 2 * y_size);
+        right.insert(right.end(), p + 2 * y_size + uv_size, p + 2 * y_size + 2 * uv_size);
+        std::ofstream f0(config_.image_dir + "/" + filename, std::ios::out | std::ios::binary);
+        if (f0.is_open()) f0.write(reinterpret_cast<const char*>(left.data()), left.size());
+        std::ofstream f1(config_.image_dir2 + "/" + filename, std::ios::out | std::ios::binary);
+        if (f1.is_open()) f1.write(reinterpret_cast<const char*>(right.data()), right.size());
+      }
+    } else {
+      std::ofstream file(config_.image_dir + "/" + filename, std::ios::out | std::ios::binary);
+      if (file.is_open()) {
+        file.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
+      }
     }
   } else {
-    filename = std::to_string(timestamp) + "." + config_.image_format;
     cv::Mat nv12(msg->height * 3 / 2, msg->width, CV_8UC1, msg->data.data());
     cv::Mat bgr;
     cv::cvtColor(nv12, bgr, cv::COLOR_YUV2BGR_NV12);
-    cv::imwrite(config_.image_dir + "/" + filename, bgr);
+    if (split) {
+      int half = bgr.rows / 2;
+      cv::imwrite(config_.image_dir + "/" + filename, bgr.rowRange(0, half));
+      cv::imwrite(config_.image_dir2 + "/" + filename, bgr.rowRange(half, bgr.rows));
+    } else {
+      cv::imwrite(config_.image_dir + "/" + filename, bgr);
+    }
   }
   ++image_save_cnt_;
+}
+
+void DataSaver::WriteImageRecord(std::ofstream& record_file, int64_t timestamp) {
+  if (!record_file.is_open()) return;
+  record_file << (config_.kalibr_format ? "cam0/data/" : "image/")
+              << timestamp << "." << config_.image_format << std::endl;
+  if (config_.kalibr_format && config_.stereo_split && !config_.image_dir2.empty()) {
+    record_file << "cam1/data/" << timestamp << "." << config_.image_format << std::endl;
+  }
 }
 
 void DataSaver::SavePcdToFile(int64_t timestamp,
